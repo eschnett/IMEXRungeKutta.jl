@@ -1,0 +1,4 @@
+name = "IMEXRungeKutta"
+uuid = "6f46d5f7-e15e-41aa-a098-eed9d1a63ad8"
+version = "0.1.0"
+authors = ["Erik Schnetter <schnetter@gmail.com>"]
