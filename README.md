@@ -1,5 +1,7 @@
 # IMEXRungeKutta.jl
 
+[![CI](https://github.com/eschnett/IMEXRungeKutta.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/eschnett/IMEXRungeKutta.jl/actions/workflows/CI.yml?query=branch%3Amain)
+
 Fixed-step additive implicit–explicit Runge–Kutta (IMEX RK) integration
 for method-of-lines systems
 
@@ -32,6 +34,13 @@ broadcasts, and supports Julia 1.10 and later.
 
 `CODE.md` is the design document: the requirements, the method, the
 package design, why an existing package does not fit, and the test plan.
+
+## Installation
+
+The package is not registered. Add it by its URL, at the release tag:
+
+    using Pkg
+    Pkg.add(url = "https://github.com/eschnett/IMEXRungeKutta.jl", rev = "v0.1.0")
 
 ## Example
 
@@ -73,15 +82,30 @@ here by about `−0.28 Δt cos t` (see `CODE.md`, "Tableaus").
 
 ## Status
 
-**The integrator exists, on the broadcast path.** `IMEXProblem`, `init`,
-`step!`, `solve!` and `solve` are in place, with the stage and step
-limiters, for all seven named tableaus (`IMEXSSP222`, `IMEXSSP2322`,
-`IMEXSSP2332`, `IMEXSSP3332`, `IMEXSSP3433`, `ARS222`, `ARS443`) and a
-caller's own `IMEXTableau`. `step!` is type-stable and allocation-free.
-The tableaus' order, stiff accuracy, L-stability and SSP coefficient are
-computed, tested, and recorded in `CODE.md`. So is the validation: the
-observed orders, the order in the stiff limit (SSP3(4,3,3) drops from 3
-to 2 there), where a step lands as `ε → 0`, total variation under upwind
-advection, and agreement with OrdinaryDiffEqSDIRK to round-off. `PLAN.md`
-breaks the rest into steps: a Metal smoke test and a 0.1.0 release next,
-then the by-owner stage arithmetic for threaded CPU arrays.
+**Version 0.1.0.** `IMEXProblem`, `init`, `step!`, `solve!` and `solve`,
+with the stage and step limiters, for all seven named tableaus
+(`IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP2332`, `IMEXSSP3332`, `IMEXSSP3433`,
+`ARS222`, `ARS443`) and a caller's own `IMEXTableau`. The stage arithmetic
+is one fused broadcast per combination. `step!` is type-stable, and
+allocation-free for a CPU `Array`.
+
+What is tested, and recorded in `CODE.md`:
+- the tableaus' order, stiff accuracy, L-stability and SSP coefficient,
+  computed in extended precision;
+- the observed orders, the order in the stiff limit (SSP3(4,3,3) drops
+  from 3 to 2 there), where a step lands as `ε → 0`, and total variation
+  under upwind advection;
+- agreement with OrdinaryDiffEqSDIRK to round-off;
+- a `Float32` run on an Apple GPU, with an `MtlArray` state and scalar
+  indexing disallowed, which agrees with the same run on the CPU. It runs
+  on request only, in an environment of its own; `test/metal_tests.jl`
+  says how.
+
+Known limits:
+- SSP2(3,3,2) is in neither OrdinaryDiffEq nor ClimaTimeSteppers, and its
+  coefficients have not yet been checked against Pareschi & Russo (2005).
+  They pass the order conditions, `R(∞) = 0`, and the observed-order,
+  stiff-limit and total-variation tests.
+- The stage arithmetic is serial on the host. A by-owner path for threaded
+  CPU arrays, `partition`, is the next step of `PLAN.md`; until then `init`
+  accepts only `partition = nothing`.
