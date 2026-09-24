@@ -4,7 +4,7 @@ using IMEXRungeKutta: OwnerPartition, owner_partition, even_partition, block_par
 using IMEXRungeKutta: by_owner, lincomb!, scratch_count
 
 # The stage arithmetic by owner ("Stage arithmetic" and "The stage plan and
-# storage" in `CODE.md`; step 5 of `PLAN.md`). The suite runs at one thread
+# storage" in `CODE.md`; step 5). The suite runs at one thread
 # and at four ("Commands" in `CLAUDE.md`), and every claim here is checked
 # at whichever it runs at.
 
@@ -127,7 +127,7 @@ end
             step!(a)
             step!(b)
             solves = calls(a.p, :solve_imp)
-            @test all(i -> a.p.U_was_ustar[i] && a.p.distinct[i] && a.p.ustar_kept[i], solves)
+            @test all(i -> a.p.U_was_u★[i] && a.p.distinct[i] && a.p.u★_kept[i], solves)
             @test calls(a.p) == calls(b.p)
             @test bits(a.u) == bits(b.u)
         end
@@ -388,6 +388,10 @@ end
     @test_throws DimensionMismatch step!(integ)
 end
 
+# The plan's type now carries an `OwnerPartition` and the owner loops'
+# closures; a `step!` the compiler cannot infer there would box and
+# allocate per call, as on the broadcast path ("The stage plan and
+# storage" in `CODE.md`).
 @testset "step! by owner is inferred" begin
     integ = init(owner_problem(rand(NSTATE)), IMEXSSP3433(); dt = 0.1,
                  partition = multiset_partition())
@@ -396,9 +400,9 @@ end
 
 # The owner path's allocations: none at one thread, where it is a plain
 # loop; at more, the fresh sticky tasks, a few hundred bytes per thread
-# per combination, the same for any state size ("Stage arithmetic" in
+# per combination, the same for any state size ("By owner, as built" in
 # `CODE.md`). A state-sized allocation here would be a copy. The helper is
-# top-level ("Allocation tests" in `PLAN.md`).
+# top-level ("Commands" in `CLAUDE.md`).
 function owner_step_allocations(integ)
     step!(integ)
     step!(integ)
@@ -421,7 +425,7 @@ end
                 @test large == 0
             else
                 @test small == large
-                # Measured in step 5 (`CODE.md`, "Stage arithmetic"): per
+                # Measured in step 5 (`CODE.md`, "By owner, as built"): per
                 # combination, 64 bytes and, per thread, 403–433 on Julia
                 # 1.13 and 559–589 on 1.10, growing with the terms.
                 @test large ≤ owner_launches(tab) * (128 + 768 * NT)

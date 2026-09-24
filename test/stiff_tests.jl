@@ -8,7 +8,7 @@ using IMEXRungeKutta: ARS222, ARS443
 #     y₁′ = −(2 + 1/ε) y₁ + y₂²/ε,    y₂′ = y₁ − y₂ − y₂²,
 #
 # with `y(0) = (1, 1)` and the exact solution `y₁ = e^{−2t}`, `y₂ = e^{−t}`
-# for every `ε`. The split is `PLAN.md`'s: the implicit part is
+# for every `ε`. The split is that of `CODE.md`: the implicit part is
 # `g = ((y₂² − y₁)/ε, 0)`, whose stage solve is `U₂ = u★₂` and then `U₁` in
 # closed form.
 #

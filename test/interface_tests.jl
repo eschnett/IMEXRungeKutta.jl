@@ -159,7 +159,7 @@ end
     @test integ.u == solve!(init(prob, IMEXSSP3433(); dt = 0.1)).u
     @test which(CommonSolve.solve, Tuple{IMEXProblem,IMEXTableau}).module === IMEXRungeKutta
     @test integ.tableau.name == "SSP3(4,3,3)"
-    @test occursin("SSP3(4,3,3)", sprint(show, integ))
+    @test sprint(show, integ) == "IMEXIntegrator(\"SSP3(4,3,3)\", t = 1.0, step 10 of 10)"
 end
 
 # A `step!` whose return type the compiler cannot infer would box and
@@ -215,6 +215,7 @@ end
     @test occursin("positive", msg(() -> init(prob, ARS222(); dt = 0.0)))
     @test occursin("positive", msg(() -> init(prob, ARS222(); dt = -0.1)))
     @test occursin("positive", msg(() -> init(prob, ARS222(); dt = Inf)))
+    @test occursin("real number", msg(() -> init(prob, ARS222(); dt = 0.1 + 0im)))
     @test occursin("finite",
                    msg(() -> init(decay_problem([1.0], (0.0, Inf)), ARS222(); dt = 0.1)))
     @test occursin("(t0, t1)", msg(() -> IMEXProblem(f_decay!, solve_decay_imp!, [1.0],

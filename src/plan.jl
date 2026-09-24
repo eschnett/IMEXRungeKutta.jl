@@ -25,9 +25,10 @@ One stage `k` of the plan:
   nonzero ones: first `(Δt ã_kj, k̃_j)` by increasing `j`, then
   `(a_kj/a_jj, d_j)` by increasing `j`. `uⁿ` itself is not a term; it is
   the `x₀` of the combination;
-- `ustar`: where `u★` is formed when the stage solves: the stage's own
-  increment array `d_k` if it is implicit-used, else the one extra array.
-  If the row is empty, `u★ = uⁿ`, and `ustar` is `integ.u` itself;
+- `u★`: the array the stage value `u★` is formed in when the stage
+  solves: the stage's own increment array `d_k` if it is implicit-used,
+  else the one extra array. If the row is empty, `u★ = uⁿ`, and the field
+  is `integ.u` itself;
 - `U`: the stage value that `f_exp!` reads. It is the scratch `U`, or
   `integ.u` itself at a trivial stage (no solve, empty row);
 - `d`, `k̃`: the increment and tendency arrays, or `nothing` where the
@@ -39,7 +40,7 @@ One stage `k` of the plan:
 struct Stage{Solves,ExplicitUsed,ImplicitUsed,Terms<:Tuple,S,UA,DA,KA,T,Tt}
     k::Int
     terms::Terms
-    ustar::S
+    u★::S
     U::UA
     d::DA
     k̃::KA
@@ -48,9 +49,9 @@ struct Stage{Solves,ExplicitUsed,ImplicitUsed,Terms<:Tuple,S,UA,DA,KA,T,Tt}
     c::Tt
 end
 
-function Stage{S,E,I}(k, terms, ustar, U, d, k̃, γΔt, c̃, c) where {S,E,I}
-    return Stage{S,E,I,typeof(terms),typeof(ustar),typeof(U),typeof(d),typeof(k̃),
-                 typeof(γΔt),typeof(c̃)}(k, terms, ustar, U, d, k̃, γΔt, c̃, c)
+function Stage{S,E,I}(k, terms, u★, U, d, k̃, γΔt, c̃, c) where {S,E,I}
+    return Stage{S,E,I,typeof(terms),typeof(u★),typeof(U),typeof(d),typeof(k̃),
+                 typeof(γΔt),typeof(c̃)}(k, terms, u★, U, d, k̃, γΔt, c̃, c)
 end
 
 solves(::Stage{S}) where {S} = S
@@ -128,13 +129,13 @@ function build_plan(tab::IMEXTableau, u, u0, ::Type{T}, Δt::Tt, partition) wher
     stages = map(1:s) do k
         terms = rows[k]
         if sol[k]
-            ustar = isempty(terms) ? u : imp[k] ? D[k] : E
+            u★ = isempty(terms) ? u : imp[k] ? D[k] : E
             Uk = U
         else
-            ustar = nothing
+            u★ = nothing
             Uk = !ex[k] ? nothing : isempty(terms) ? u : U
         end
-        return Stage{sol[k],ex[k],imp[k]}(k, terms, ustar, Uk, D[k], K[k], ΔtT * co.γ[k],
+        return Stage{sol[k],ex[k],imp[k]}(k, terms, u★, Uk, D[k], K[k], ΔtT * co.γ[k],
                                           co.c̃[k], co.c[k])
     end
 

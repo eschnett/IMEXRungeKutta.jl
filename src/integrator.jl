@@ -224,12 +224,12 @@ end
         # itself if the row is empty. 2. The stage solve, from `U = u★`,
         # then `d_k = U − u★`.
         if isempty(st.terms)
-            copy_state!(st.U, st.ustar, part)
+            copy_state!(st.U, st.u★, part)
         else
-            lincomb_copy!(st.ustar, st.U, u, st.terms, part)
+            lincomb_copy!(st.u★, st.U, u, st.terms, part)
         end
-        integ.solve_imp!(st.U, st.ustar, st.γΔt, integ.p, tn + st.c * integ.dt)
-        I && increment!(st.d, st.U, st.ustar, part)
+        integ.solve_imp!(st.U, st.u★, st.γΔt, integ.p, tn + st.c * integ.dt)
+        I && increment!(st.d, st.U, st.u★, part)
     elseif E && !isempty(st.terms)
         # No solve: `U = u★`, formed in `U`.
         lincomb!(st.U, u, st.terms, part)

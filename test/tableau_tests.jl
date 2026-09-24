@@ -255,6 +255,14 @@ end
     @test tab.c̃ == [0, big(0.1)]
 end
 
+# The default `show` would print every 256-bit coefficient, in an error
+# message, a log line or the integrator's fields; the tableau prints as its
+# name and stage count instead ("Tableaus are values" in `CODE.md`).
+@testset "A tableau prints as its type, name and stage count" begin
+    @test sprint(show, IMEXSSP3433()) == "IMEXTableau{BigFloat}(\"SSP3(4,3,3)\", 4 stages)"
+    @test sprint(show, ARS443()) == "IMEXTableau{Rational{BigInt}}(\"ARS(4,4,3)\", 5 stages)"
+end
+
 # Rounding twice, summing converted entries, forming a quotient in `T`, or
 # converting at the global precision would each move a coefficient off
 # the correctly rounded 256-bit value, and so off the value the tableau

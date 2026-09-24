@@ -1,8 +1,8 @@
 using IMEXRungeKutta: IMEXProblem
 
 # A smoke test of the order on a real problem, so that step 2 cannot ship
-# an integrator that passes only mocks. Step 3 of `PLAN.md` does the full
-# validation.
+# an integrator that passes only mocks. `order_tests.jl` (step 3) does the
+# full validation.
 #
 # `u′ = −u + cos t`, with the implicit part `−u`, whose stage solve is
 # `U = u★/(1 + γΔt)`, and the explicit part `cos t`, which depends on `t`:
@@ -48,7 +48,7 @@ const SMOKE_ORDERS = [
         p = observed_order(errs, dts)
         @test abs(p - spec.order) < 0.2
     end
-    # PLAN.md's two named cases, asserted on their own.
+    # The two cases step 2 named, SSP2(2,2,2) and SSP3(4,3,3), on their own.
     @test abs(observed_order(forced_errors(IMEXSSP222(), dts), dts) - 2) < 0.2
     @test abs(observed_order(forced_errors(IMEXSSP3433(), dts), dts) - 3) < 0.2
 end

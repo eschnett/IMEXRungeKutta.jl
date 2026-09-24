@@ -37,7 +37,7 @@ function plan_arrays(plan)
     arrays = Any[]
     for st in plan.stages
         append!(arrays, last.(st.terms))
-        for a in (st.ustar, st.U, st.d, st.k̃)
+        for a in (st.u★, st.U, st.d, st.k̃)
             a === nothing || push!(arrays, a)
         end
     end
@@ -123,9 +123,9 @@ end
     # stage 1 forms no `u★` at all: it is `integ.u`.
     integ = mock_integrator(CORNER_TABLEAUS[1].tab, [1.0])
     st = integ.plan.stages[2]
-    @test st.ustar !== integ.u && st.d === nothing && st.ustar !== st.U
+    @test st.u★ !== integ.u && st.d === nothing && st.u★ !== st.U
     integ = mock_integrator(CORNER_TABLEAUS[2].tab, [1.0])
-    @test integ.plan.stages[1].ustar === integ.u
+    @test integ.plan.stages[1].u★ === integ.u
 end
 
 # Mixing up the two abscissae is invisible on a problem autonomous in `t`
@@ -176,14 +176,14 @@ end
         γ = coefficients(Float64, Float64, tab).γ
         solving = findall(!iszero, [tab.A[k, k] for k in 1:length(tab.b)])
         for (i, k) in zip(calls(log, :solve_imp), solving)
-            @test log.U_was_ustar[i]
+            @test log.U_was_u★[i]
             @test log.distinct[i]
-            @test log.ustar_kept[i]
+            @test log.u★_kept[i]
             @test log.γΔt[i] == γ[k] * integ.dt
             @test log.arr[i] !== integ.u
             # `u★ = uⁿ` exactly where the row is empty, and it is then
             # `integ.u` itself; otherwise it is formed in scratch.
-            @test (log.ustar[i] === integ.u) == IMEXRungeKutta.row_empty(tab, k)
+            @test (log.u★[i] === integ.u) == IMEXRungeKutta.row_empty(tab, k)
         end
     end
 end
@@ -419,8 +419,7 @@ end
 
 # `step!` allocating would cost a garbage collection every few steps of a
 # long run; a closure inside a `@testset` allocates itself, so this helper
-# is top-level and takes concrete arguments ("Allocation tests" in
-# `PLAN.md`).
+# is top-level and takes concrete arguments ("Commands" in `CLAUDE.md`).
 function step_allocations(integ)
     step!(integ)
     return @allocated step!(integ)

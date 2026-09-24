@@ -1,6 +1,7 @@
 # Test-only mock callbacks. They record every call into buffers
 # preallocated in `p`, so that the mechanics tests can also run under the
-# allocation helper ("Mocks" in `PLAN.md`'s sharp edges).
+# allocation helper, which a mock that allocated would defeat ("Commands"
+# in `CLAUDE.md`).
 
 using IMEXRungeKutta: IMEXRungeKutta
 
@@ -16,10 +17,10 @@ mutable struct CallLog{A,T,Tt}
     # `u★` and a distinct array, and whether `u★` was unchanged after `U`
     # was written.
     γΔt::Vector{T}
-    ustar::Vector{A}
-    U_was_ustar::Vector{Bool}
+    u★::Vector{A}
+    U_was_u★::Vector{Bool}
     distinct::Vector{Bool}
-    ustar_kept::Vector{Bool}
+    u★_kept::Vector{Bool}
     # The limiters: `integ.t` and `integ.nstep` as they saw them.
     integ_t::Vector{Tt}
     integ_nstep::Vector{Int}
@@ -64,15 +65,15 @@ function mock_f!(du, u, log::CallLog, t)
     return nothing
 end
 
-function mock_solve!(U, ustar, γΔt, log::CallLog, t)
+function mock_solve!(U, u★, γΔt, log::CallLog, t)
     i = record!(log, :solve_imp, t, U)
     log.γΔt[i] = γΔt
-    log.ustar[i] = ustar
-    log.U_was_ustar[i] = U == ustar
-    log.distinct[i] = U !== ustar
-    copyto!(log.snap, ustar)
-    U .= ustar ./ (1 + γΔt)
-    log.ustar_kept[i] = ustar == log.snap
+    log.u★[i] = u★
+    log.U_was_u★[i] = U == u★
+    log.distinct[i] = U !== u★
+    copyto!(log.snap, u★)
+    U .= u★ ./ (1 + γΔt)
+    log.u★_kept[i] = u★ == log.snap
     return nothing
 end
 

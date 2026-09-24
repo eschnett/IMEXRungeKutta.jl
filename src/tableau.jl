@@ -5,8 +5,8 @@
 # Every closed form, every abscissa and every coefficient quotient is
 # computed at this precision, inside `with_coefficient_precision`. BigFloat
 # arithmetic rounds to the *global* precision, whatever the precision of
-# its operands, so nothing here may rely on it ("Sharp edges" in
-# `PLAN.md`).
+# its operands, so nothing here may rely on it ("What `coefficients`
+# holds" in `CODE.md`).
 const COEFFICIENT_PRECISION = 256
 
 with_coefficient_precision(f) = setprecision(f, BigFloat, COEFFICIENT_PRECISION)

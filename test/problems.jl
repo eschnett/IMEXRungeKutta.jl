@@ -20,8 +20,8 @@ end
 #
 #     y₁′ = −(2 + 1/ε) y₁ + y₂²/ε,    y₂′ = y₁ − y₂ − y₂²,
 #
-# split as `PLAN.md` says: the implicit part is `g = ((y₂² − y₁)/ε, 0)` and
-# the explicit part `f = (−2y₁, y₁ − y₂ − y₂²)`. The stage solve is exact:
+# split as "The stiff limit" in `CODE.md` says: the implicit part is
+# `g = ((y₂² − y₁)/ε, 0)` and the explicit part `f = (−2y₁, y₁ − y₂ − y₂²)`. The stage solve is exact:
 # `U₂ = u★₂`, since `g₂ = 0`, and then `U₁ = (ε u★₁ + γΔt U₂²)/(ε + γΔt)`.
 # From `y(0) = (1, 1)` the exact solution is `y₁ = e^{−2t}`, `y₂ = e^{−t}`
 # for every `ε`, on the manifold `y₁ = y₂²`. The two-component state is
