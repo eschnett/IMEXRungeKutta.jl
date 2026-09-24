@@ -7,18 +7,26 @@ item is marked **(decided)**, **(proposed)** or **(open)**. A decision
 that a step proposed and Erik then took keeps its history, as "(proposed
 in step N, decided 2026-09-24)".
 
-**Status (2026-09-24):** the [package design](#package-design) is
-complete, except where the partition for TreeAMR state vectors comes
-from (open). SSP2(3,3,2)'s coefficients are still to be checked against
-the paper (open). The implementation plan is `PLAN.md`. Steps 0–4, the
-scaffolding, the tableaus, the integrator on the broadcast path, the
-validation ([Validation](#validation-measured-in-step-3)) and the Metal
-smoke run ([On a device](#on-a-device-measured-in-step-4)), are done, and
-v0.1.0 is prepared; the tag is Erik's. Step 5, the stage arithmetic by
-owner ([By owner, as built](#by-owner-as-built-measured-in-step-5)), is
-done; its Symmetry numbers are pending a run. Step 6, the review pass, is
-done, and waits on Erik's confirmation of the decisions marked
-(proposed) before the plan is closed (amended in step 6).
+**Status (2026-09-24):** the implementation plan is complete, and
+`PLAN.md` is deleted (amended in step 6). Its steps 0–6 built the
+[package design](#package-design): the tableaus, the integrator on the
+broadcast path, the validation
+([Validation](#validation-measured-in-step-3)), the Metal smoke run
+([On a device](#on-a-device-measured-in-step-4)), the stage arithmetic by
+owner ([By owner, as built](#by-owner-as-built-measured-in-step-5)) and a
+review pass. Erik decided the steps' proposals on 2026-09-24, all but one.
+Open or pending:
+- where the partition for TreeAMR state vectors comes from (open;
+  [Stage arithmetic](#stage-arithmetic-decided));
+- SSP2(3,3,2)'s coefficients against Pareschi & Russo (2005) (open;
+  [Open questions](#open-questions));
+- the Symmetry run of `bench/symmetry_stage_arithmetic.sh`, which is
+  Erik's, and the one decision still proposed, fresh tasks rather than
+  persistent workers, which waits on it
+  ([By owner, as built](#by-owner-as-built-measured-in-step-5));
+- the v0.1.0 tag, which is Erik's;
+- SciML/OrdinaryDiffEq.jl#4620 upstream, until whose fix two oracle
+  comparisons are `@test_broken` ([The oracle](#the-oracle)).
 
 ## Purpose
 
@@ -1056,16 +1064,17 @@ touch, pinned and interleaved, and unpinned.
   alone (amended in step 0). `test/tableau_properties.jl` holds the
   test-only tableau properties, and `test/tableau_tests.jl` asserts them
   (amended in step 1). `test/mocks.jl` holds the mock callbacks, which
-  log their calls into buffers preallocated in `p`; `interface_tests.jl`,
-  `mechanics_tests.jl` and `smoke_order_tests.jl` follow `PLAN.md`'s step
-  2; and `readme_tests.jl` evaluates the README's `julia` blocks and
-  checks their result (amended in step 2). Step 3 adds `order_tests.jl`,
-  `stiff_tests.jl`, `ap_tests.jl`, `ssp_tests.jl` and `oracle_tests.jl`,
-  one per validation group of [Testing](#testing-decided), and
-  `problems.jl`, the helpers they share (amended in step 3). Step 5 adds
-  `owner_tests.jl`, the by-owner items of Mechanics, in a testset of its
-  own after `mechanics_tests.jl`, whose corner tableaus it reuses
-  (proposed in step 5, decided 2026-09-24).
+  log their calls into buffers preallocated in `p`; `interface_tests.jl`
+  and `mechanics_tests.jl` hold the interface and the mechanics items,
+  and `smoke_order_tests.jl` a quick check of the order of SSP2(2,2,2) and
+  SSP3(4,3,3) on `u′ = −u + cos t`; and `readme_tests.jl` evaluates the
+  README's `julia` blocks and checks their result (amended in step 2).
+  Step 3 adds `order_tests.jl`, `stiff_tests.jl`, `ap_tests.jl`,
+  `ssp_tests.jl` and `oracle_tests.jl`, one per validation group of
+  [Testing](#testing-decided), and `problems.jl`, the helpers they share
+  (amended in step 3). Step 5 adds `owner_tests.jl`, the by-owner items of
+  Mechanics, in a testset of its own after `mechanics_tests.jl`, whose
+  corner tableaus it reuses (proposed in step 5, decided 2026-09-24).
 - `bench/`: `stage_arithmetic.jl`, the thread sweep of step 5, and
   `symmetry_stage_arithmetic.sh`, its SLURM job, after TreeAMR's
   `bench/symmetry_affinity.sh` (proposed in step 5, decided 2026-09-24).

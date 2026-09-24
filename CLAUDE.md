@@ -35,18 +35,25 @@ Rules that follow from `CODE.md` and govern every change:
 
 ## Current state
 
-**Steps 0–5 done: scaffolding, the tableaus, the integrator on the
-broadcast path, the validation, the Metal smoke run, and the stage
-arithmetic by owner; v0.1.0 is prepared, and the tag is Erik's. Step 6's
-review is done and awaits Erik's confirmation of the (proposed)
-decisions in `CODE.md`** (2026-09-24). `CODE.md` records the
+**The implementation plan is complete** (2026-09-24). Its steps 0–6,
+the scaffolding, the tableaus, the integrator on the broadcast path, the
+validation, the Metal smoke run, the stage arithmetic by owner and the
+review pass, are done, and `PLAN.md` is deleted. `CODE.md` records the
 requirements, the method, the survey of OrdinaryDiffEq and
-ClimaTimeSteppers, the package design, the test plan and the open
-questions. Two questions are still open: where a TreeAMR state vector's
-ownership partition comes from, and whether SSP2(3,3,2)'s coefficients,
-recalled by the step-1 reviewer rather than transcribed, match Pareschi &
-Russo (2005). `PLAN.md` splits the work
-into steps 0–6; it is deleted once Erik has confirmed step 6. What exists:
+ClimaTimeSteppers, the package design as built and measured, the tests
+and the open questions. Erik decided every proposal the steps made but
+one on 2026-09-24. Open or pending:
+- where a TreeAMR state vector's ownership partition comes from (open);
+- whether SSP2(3,3,2)'s coefficients, recalled by the step-1 reviewer
+  rather than transcribed, match Pareschi & Russo (2005) (open);
+- the Symmetry run of `bench/symmetry_stage_arithmetic.sh`, which is
+  Erik's, and the one decision still proposed, fresh sticky tasks rather
+  than persistent workers for the owner path, which waits on it
+  (`CODE.md`, "By owner, as built");
+- the v0.1.0 tag, which is Erik's (below);
+- #4620 upstream ("Repository facts").
+
+What exists:
 - `Project.toml` with CommonSolve as the one run-time dependency, and
   `test/Project.toml`, the test environment: CommonSolve, LinearAlgebra,
   OrdinaryDiffEqSDIRK (compat `2.9.6`, the oracle), TOML and Test;
@@ -110,13 +117,11 @@ step ends there, are in `CODE.md`, "Where a step ends in the stiff limit"
 and "Validation".
 
 **0.1.0 is prepared, not tagged.** Before the tag: Erik commits his
-`LICENSE.md` (MIT); `main` gets step 4, and the remote's `main`, which
-has steps 0–2, gets steps 3 and 4; and CI is green there. The tag, and
-any registration, are Erik's. Step 5 is on local `main` too, after the
-0.1.0 commit (ea555c6), while `Project.toml` still says 0.1.0: whether
-the tag goes on that commit or a later one, and the next version number,
-are Erik's. Its Symmetry run is Erik's
-(`bench/symmetry_stage_arithmetic.sh`).
+`LICENSE.md` (MIT); the remote's `main`, which has steps 0–2, gets steps 3
+and 4; and CI is green there. The tag, and any registration, are Erik's.
+Steps 5 and 6 are on local `main` too, after the 0.1.0 commit (ea555c6),
+while `Project.toml` still says 0.1.0: whether the tag goes on that commit
+or a later one, and the next version number, are Erik's.
 
 ## Commands
 
@@ -265,6 +270,56 @@ EntropyEOS):
   README-only push to `main` for that reason.
 - **Testset names are claims**, each opening with a comment naming the
   failure mode it guards.
+
+## Sharp edges
+
+Traps that the design makes easy to fall into, carried over from the
+implementation plan. The why is in `CODE.md`.
+
+- **Increments, not tendencies.** The integrator stores `d_k = U − u★`
+  and uses the coefficients `a_kj/a_jj` and `b_j/a_jj`, computed in
+  extended precision and rounded to `T` once. Never form
+  `(U − u★)/(a_kk Δt)` and multiply back.
+- **Structural zeros are never read.** A skipped tendency has no array,
+  and scratch filled with NaN must not reach the result (`0·NaN = NaN`).
+  The stage plan branches on the pattern; it never multiplies by zero.
+- **Coefficient precision.** Compute every closed form inside
+  `setprecision(BigFloat, 256) do … end`, never at the global precision.
+  Compute the abscissae `c` and `c̃` exactly and convert the result, not a
+  sum of converted entries. Convert to `T` from the 256-bit value, the
+  rational tableaus included: `T(BigFloat(r))`.
+- **`BigFloat` and precompilation.** The named tableaus are functions,
+  not `const`s, and `init` builds its stage plan from them at run time.
+- **Type instability is confined to `init`.** The stage plan's type
+  depends on the tableau's nonzero pattern. `step!` must pass `@inferred`,
+  and on the broadcast path allocate nothing.
+- **CommonSolve's names.** `using CommonSolve: CommonSolve, init, solve,
+  solve!, step!`, add methods, and re-export the four, so that they are
+  SciMLBase's and OrdinaryDiffEq's bindings too; a test asserts
+  `IMEXRungeKutta.init === CommonSolve.init`.
+- **The tableau names clash with OrdinaryDiffEqSDIRK's** (`IMEXSSP3433`,
+  `ARS222`, …). The oracle test does `import OrdinaryDiffEqSDIRK as ODE`
+  and qualifies everything.
+- **The oracle.**
+  - SciML's `SplitODEProblem(f1, f2, u0, tspan)` treats **`f1`
+    implicitly** and `f2` explicitly: the opposite order from
+    `IMEXProblem(f_exp!, solve_imp!, …)`.
+  - Upstream's state must be real.
+  - Upstream's SSP3(4,3,3) uses the 14-digit coefficients, which differ
+    from the closed form by about 1e−15.
+  - Upstream's `ARS443` has `b̃ = b`, not the last row of `Ã`. Compare
+    ARS(4,4,3) with `IMEXTableau("…", Ã, b, A, b)`, built from
+    `ARS443()`'s parts.
+  - #4620 is under "Repository facts".
+- **Mocks** record their calls into buffers preallocated in `p`, so that
+  the mechanics tests can also run under the allocation helper.
+- **Metal** (`CODE.md`, "On a device").
+  - The device has no `Float64`. Only `T` may reach a kernel; the time
+    stays on the host, and a callback converts what it takes from `t`.
+  - Metal compiles a shape-specialized kernel once a shape has been
+    broadcast more than ten times, so the second step at a new state
+    length compiles for about a second and allocates about 250 MB. Warm
+    up three steps before measuring anything.
 
 ## Repository facts
 

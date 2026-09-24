@@ -1,7 +1,7 @@
 #!/bin/bash
 # The stage arithmetic, broadcast against by owner, on one Symmetry AMD node
 # (64-core EPYC 7543, 8 NUMA domains of one CCD each), for "Stage
-# arithmetic" in CODE.md (step 5 of PLAN.md). After TreeAMR's
+# arithmetic" in CODE.md (built in step 5). After TreeAMR's
 # bench/symmetry_affinity.sh (branch claude/festive-bun-656842).
 #
 #     sbatch bench/symmetry_stage_arithmetic.sh

@@ -1,5 +1,5 @@
 # The stage arithmetic, broadcast against by owner, over a thread sweep
-# ("Stage arithmetic" in CODE.md; step 5 of PLAN.md).
+# ("Stage arithmetic" in CODE.md; built in step 5).
 #
 #     julia --project=. bench/stage_arithmetic.jl
 #
