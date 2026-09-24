@@ -3,7 +3,8 @@
 #
 # It is not part of `Pkg.test()`, and Metal is not in the package's test
 # environment: it has its own, `test/metal/Project.toml`, which develops
-# the package from `../..` (proposed in step 4; "Commands" in `CLAUDE.md`):
+# the package from `../..` (proposed in step 4, decided 2026-09-24;
+# "Commands" in `CLAUDE.md`):
 #
 #     julia --project=test/metal -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 #     IMEXRUNGEKUTTA_TEST_METAL=1 julia --project=test/metal test/metal_tests.jl

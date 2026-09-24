@@ -3,7 +3,9 @@
 This is the design document: what the package is, what has been decided,
 and why. Where the implementation shows it wrong or incomplete, amend it
 and say so ("(amended in step N)", "(measured in step N)"). Each design
-item is marked **(decided)**, **(proposed)** or **(open)**.
+item is marked **(decided)**, **(proposed)** or **(open)**. A decision
+that a step proposed and Erik then took keeps its history, as "(proposed
+in step N, decided 2026-09-24)".
 
 **Status (2026-09-24):** the [package design](#package-design) is
 complete, except where the partition for TreeAMR state vectors comes
@@ -81,7 +83,7 @@ existed:
   `similar(u0)` arrays, so device arrays work. The package must not
   require a particular array type. A faster path for a CPU `Array` is
   allowed alongside (amended 2026-09-24, see
-  [Stage arithmetic](#stage-arithmetic-decided-details-proposed)); it is
+  [Stage arithmetic](#stage-arithmetic-decided)); it is
   `partition`, since step 5. On
   Metal, a `Float32` `MtlArray` state runs with scalar indexing
   disallowed and agrees with the CPU bitwise (measured in step 4; [On a
@@ -259,7 +261,7 @@ condition of one part.
 The E-polynomials, in `y`. Every coefficient is non-negative, which is
 sufficient for `E ≥ 0`, and the diagonals are positive. The test helper
 refuses to decide a tableau with a negative coefficient, rather than pass
-it (proposed in step 1):
+it (proposed in step 1, decided 2026-09-24):
 - SSP2(2,2,2) and ARS(2,2,2): `γ⁴y⁴` (= 0.00736 y⁴), with
   `γ = 1 − 1/√2`. Both implicit parts have the same `R`.
 - SSP2(3,2,2): `y⁴/8 + y⁶/64`.
@@ -458,12 +460,13 @@ and are already in almost every Julia environment. PrecompileTools
 1.3 requires Julia 1.12, so on 1.10 the resolver picks 1.2.1; the suite
 passes with both. The requirement stands: one direct dependency.
 
-**The compat bound** (proposed in step 0) is `CommonSolve = "0.2.14"`,
-that is `[0.2.14, 0.3)`: the current 0.2 series, from the one version
-the suite has run against. A cap below 0.2.14 would avoid the two
-transitive packages, but it would hold every environment that loads this
-package back from CommonSolve's later releases. SciMLBase 3.56 bounds
-CommonSolve by `0.2.4 - 0.2`, so either choice resolves beside it.
+**The compat bound** (proposed in step 0, decided 2026-09-24) is
+`CommonSolve = "0.2.14"`, that is `[0.2.14, 0.3)`: the current 0.2 series,
+from the one version the suite has run against. A cap below 0.2.14 would
+avoid the two transitive packages, but it would hold every environment
+that loads this package back from CommonSolve's later releases. SciMLBase
+3.56 bounds CommonSolve by `0.2.4 - 0.2`, so either choice resolves beside
+it.
 
 The alternatives, not taken:
 - **Own the names.** They clash with DifferentialEquations when both are
@@ -499,7 +502,7 @@ The alternatives, not taken:
   no cached tendency. So an atmosphere reset or a diagnostic fix-up in
   the driver is always safe.
 
-What step 2 settled (proposed in step 2):
+What step 2 settled (proposed in step 2, decided 2026-09-24):
 - **The integrator type** is `IMEXIntegrator`, a mutable struct, not
   exported. Every field but `t` and `nstep` is `const`, so `integ.u = v`
   is an error rather than a silent rebinding that the stage plan, which
@@ -593,9 +596,9 @@ step limiter, `integ.u` is undefined.
   `Δt = (t1 − t0)/nsteps`, which is at most the requested `dt`. The
   ceiling has a tolerance of a few ulps, so that a chunk meant to be a
   whole number of steps is not given one extra step by round-off.
-  - **The tolerance** (proposed in step 2). With `r = (t1 − t0)/dt` and
-    `m` the integer nearest it, `nsteps = m` if `m ≥ 1` and
-    `|r − m| ≤ 4 (eps(r) + (eps(t0) + eps(t1))/dt)`, and `⌈r⌉`
+  - **The tolerance** (proposed in step 2, decided 2026-09-24). With
+    `r = (t1 − t0)/dt` and `m` the integer nearest it, `nsteps = m` if
+    `m ≥ 1` and `|r − m| ≤ 4 (eps(r) + (eps(t0) + eps(t1))/dt)`, and `⌈r⌉`
     otherwise. The second part is needed: `t1 − t0` inherits the rounding
     of both ends. In the test's sweep of chunks `(kT, (k + 1)T)` with
     `dt = T/m` (four `T`, `k` up to 123456, `m` up to 12), 149 of the 288
@@ -638,7 +641,7 @@ step limiter, `integ.u` is undefined.
 - **Properties are computed in the tests.** The order conditions,
   L-stability and the SSP coefficient are not package API.
 
-What step 1 settled (proposed in step 1):
+What step 1 settled (proposed in step 1, decided 2026-09-24):
 - **The fields** are `name`, `Ã`, `b̃`, `A`, `b`, `c̃` and `c`.
   - The names are Pareschi–Russo's and ARS's, `"SSP3(4,3,3)"` and
     `"ARS(4,4,3)"`.
@@ -718,17 +721,17 @@ So the scratch is:
 
 For SSP3(4,3,3) that is 1 + 4 + 3 = 8 arrays, besides `integ.u`.
 
-**An empty row forms no `u★`** (proposed in step 2). A stage whose row is
-empty in both parts has `u★ = uⁿ`. If it solves, the integrator passes
-`integ.u` itself to `solve_imp!` as `u★`: `U` is copied from it, and
-`d_k = U − uⁿ`. Forming `u★` in `d_k` first would cost one more state
-pass per step, for every IMEX-SSP scheme's stage 1. This amends the last
-item of the scratch count, which read "if some solving stage is not
-implicit-used", and `scratch_count` with it (amended in step 2). None of
-the seven named tableaus has such a stage, so their counts are
+**An empty row forms no `u★`** (proposed in step 2, decided 2026-09-24). A
+stage whose row is empty in both parts has `u★ = uⁿ`. If it solves, the
+integrator passes `integ.u` itself to `solve_imp!` as `u★`: `U` is copied
+from it, and `d_k = U − uⁿ`. Forming `u★` in `d_k` first would cost one
+more state pass per step, for every IMEX-SSP scheme's stage 1. This amends
+the last item of the scratch count, which read "if some solving stage is
+not implicit-used", and `scratch_count` with it (amended in step 2). None
+of the seven named tableaus has such a stage, so their counts are
 unchanged.
 
-What else step 2 settled (proposed in step 2):
+What else step 2 settled (proposed in step 2, decided 2026-09-24):
 - **The plan's layout.** A `Stage{Solves,ExplicitUsed,ImplicitUsed}` per
   stage holds its terms, where `u★` is formed, the stage value `U` that
   `f_exp!` reads (`integ.u` itself at a trivial stage), the `d_k` and
@@ -755,16 +758,17 @@ What else step 2 settled (proposed in step 2):
   array. No named tableau has either.
 - **First touch writes zero.** `init` fills each scratch array with
   `zero(eltype(u0))`, through the partition.
-- **`integ.u` is first-touched too** (proposed in step 5). By owner, and
-  unless `alias_u0 = true`, `init` makes `integ.u` as `similar(u0)` and
-  copies `u0` into it through the partition, where the broadcast path
-  calls `copy(u0)`. The state is read and written by every combination,
-  as the scratch is. An aliased `u0` stays where its caller put it.
+- **`integ.u` is first-touched too** (proposed in step 5, decided
+  2026-09-24). By owner, and unless `alias_u0 = true`, `init` makes
+  `integ.u` as `similar(u0)` and copies `u0` into it through the
+  partition, where the broadcast path calls `copy(u0)`. The state is read
+  and written by every combination, as the scratch is. An aliased `u0`
+  stays where its caller put it.
 - **The plan checks itself.** `init` throws an internal error if the plan
   allocated other than `scratch_count(tab)` arrays, or if a term reads an
   array the pattern did not allocate.
 
-### Stage arithmetic (decided, details proposed)
+### Stage arithmetic (decided)
 
 **Every combination is one fused linear combination**,
 `dst = x₀ + Σ c_j x_j`. That is one pass that reads `m + 1` arrays and
@@ -825,17 +829,18 @@ ranges into their state vector. It is the same ownership rule
 `launch_by_owner!` already uses. Until TreeAMR has it, the caller builds
 the ranges from `threadchunks(nblocks)` and the set layout. This is a
 request to add to TreeGRRMHD's upstream list, not a dependency here.
-- Step 5 adds a helper that knows nothing of TreeAMR (proposed in step 5):
-  the internal, unexported `block_partition(blocks, segments)`. `blocks[c]`
-  is the range of block numbers thread `c` owns, one per thread, as
-  `threadchunks(nblocks)` gives them, padded with empty ranges to
-  `nthreads()`. `segments` holds one `(offset, blocklength)` per segment
-  of equal-sized consecutive blocks. Thread `c` then owns one range per
-  segment. A TreeAMR state vector is such a layout, one segment per field
-  set with `blocklength = N^D · nvars`, if its sets are concatenated; the
-  caller asserts that, not this package. The question stays open: the
-  helper is not exported until TreeAMR's own function exists or Erik
-  decides to export it.
+- Step 5 adds a helper that knows nothing of TreeAMR (proposed in step 5,
+  decided 2026-09-24): the internal, unexported
+  `block_partition(blocks, segments)`. `blocks[c]` is the range of block
+  numbers thread `c` owns, one per thread, as `threadchunks(nblocks)`
+  gives them, padded with empty ranges to `nthreads()`. `segments` holds
+  one `(offset, blocklength)` per segment of equal-sized consecutive
+  blocks. Thread `c` then owns one range per segment. A TreeAMR state
+  vector is such a layout, one segment per field set with
+  `blocklength = N^D · nvars`, if its sets are concatenated; the caller
+  asserts that, not this package. The question stays open: the helper is
+  not exported until TreeAMR's own function exists or Erik decides to
+  export it.
 
 **Rejected:**
 - **Polyester** (`RK4(thread = True())`). TreeWave measured it as worse,
@@ -852,11 +857,11 @@ can come in a later step without changing the interface. In step 2 it is
 `(coefficient, array)` pairs and a per-element kernel that folds them
 left to right. `copy_state!`, `increment!` (`d = U − u★`) and
 `first_touch!` take the same last argument. `partition === nothing` is
-one `broadcast!` each; step 5 adds methods (proposed in step 2). Step 5
-adds `lincomb_copy!(u★, U, x₀, terms, partition)` too, the fused pass
-that forms `u★` and `U` together. On the broadcast path it is `lincomb!`
-then `copy_state!`, exactly the two broadcasts of step 2, so that path is
-unchanged (amended in step 5).
+one `broadcast!` each; step 5 adds methods (proposed in step 2, decided
+2026-09-24). Step 5 adds `lincomb_copy!(u★, U, x₀, terms, partition)` too,
+the fused pass that forms `u★` and `U` together. On the broadcast path it
+is `lincomb!` then `copy_state!`, exactly the two broadcasts of step 2, so
+that path is unchanged (amended in step 5).
 
 ### By owner, as built (measured in step 5)
 
@@ -864,18 +869,19 @@ unchanged (amended in step 5).
 M3 Pro (6 performance and 6 efficiency cores, 12 CPU threads, 36 GB),
 under Julia 1.13.0 and 1.10.12.
 
-**The keyword** (proposed in step 5). `partition` is `nothing`, `:even`,
-or a collection of `Threads.nthreads()` elements. Element `c` is a unit
-range, or an iterable of unit ranges, of linear indices owned by
-default-pool thread `c`; it may be empty. Any `AbstractUnitRange` of
-integers is accepted and converted to `UnitRange{Int}`; a `StepRange`, a
-number or another symbol is refused. `init` sorts the nonempty ranges by
-their first index and walks them, so each refusal names the index: "the
-partition misses index 41 of the state (1:100): no thread owns it", "the
-partition doubles index 60: thread 1's range 1:60 and thread 2's range
-60:100 both own it", a range out of bounds, or the wrong number of
-elements. The checked form is an internal `OwnerPartition`, which `init`
-also accepts as it is, so that the tests can give it a hook.
+**The keyword** (proposed in step 5, decided 2026-09-24). `partition` is
+`nothing`, `:even`, or a collection of `Threads.nthreads()` elements.
+Element `c` is a unit range, or an iterable of unit ranges, of linear
+indices owned by default-pool thread `c`; it may be empty. Any
+`AbstractUnitRange` of integers is accepted and converted to
+`UnitRange{Int}`; a `StepRange`, a number or another symbol is refused.
+`init` sorts the nonempty ranges by their first index and walks them, so
+each refusal names the index: "the partition misses index 41 of the state
+(1:100): no thread owns it", "the partition doubles index 60: thread 1's
+range 1:60 and thread 2's range 60:100 both own it", a range out of
+bounds, or the wrong number of elements. The checked form is an internal
+`OwnerPartition`, which `init` also accepts as it is, so that the tests
+can give it a hook.
 
 **Placement** (measured in step 5). Thread `c`'s ranges run in one sticky
 task placed by `jl_set_task_tid(task, threadpoolsize(:interactive) + c −
@@ -891,12 +897,15 @@ from inside a `Threads.@threads :static` loop. `test/owner_tests.jl`
 records the id per range and checks it, at whatever thread count the
 suite runs.
 
-**One thread is a plain loop** (proposed in step 5), on the calling task,
-with no task, as in TreeAMR's `threaded_chunks`. On 1.13 the calling task
-is usually on the interactive thread, not on default-pool thread 1; the
-caller's own `threaded_chunks` at one thread runs there too.
+**One thread is a plain loop** (proposed in step 5, decided 2026-09-24),
+on the calling task, with no task, as in TreeAMR's `threaded_chunks`. On
+1.13 the calling task is usually on the interactive thread, not on
+default-pool thread 1; the caller's own `threaded_chunks` at one thread
+runs there too.
 
-**Fresh tasks, not persistent workers** (proposed in step 5). Each
+**Fresh tasks, not persistent workers** (proposed in step 5; Erik
+(2026-09-24): keep fresh tasks until the Symmetry run of
+`bench/symmetry_stage_arithmetic.sh` decides). Each
 combination makes one fresh sticky task per thread, waits for all of them,
 and then rethrows the first error, unwrapped from its
 `TaskFailedException` to what the loop threw. `PLAN.md` asked for
@@ -1056,12 +1065,12 @@ touch, pinned and interleaved, and unpinned.
   `problems.jl`, the helpers they share (amended in step 3). Step 5 adds
   `owner_tests.jl`, the by-owner items of Mechanics, in a testset of its
   own after `mechanics_tests.jl`, whose corner tableaus it reuses
-  (proposed in step 5).
+  (proposed in step 5, decided 2026-09-24).
 - `bench/`: `stage_arithmetic.jl`, the thread sweep of step 5, and
   `symmetry_stage_arithmetic.sh`, its SLURM job, after TreeAMR's
-  `bench/symmetry_affinity.sh` (proposed in step 5). They run in the
-  package's own environment (`--project=.`), with only the standard
-  library's `Printf` besides.
+  `bench/symmetry_affinity.sh` (proposed in step 5, decided 2026-09-24).
+  They run in the package's own environment (`--project=.`), with only the
+  standard library's `Printf` besides.
 - Test-only dependencies are in `test/Project.toml`, with its own
   `[compat]` (amended in step 6: Erik moved test-only dependencies to
   test/Project.toml). Step 0 had proposed `[extras]` and `[targets]` in
@@ -1085,13 +1094,13 @@ touch, pinned and interleaved, and unpinned.
     exactly those five, the one bound and no `[sources]`; and under
     `Pkg.test()` the active environment is that file's copy with this
     package added.
-- The one exception is the device smoke run (proposed in step 4):
-  `test/metal_tests.jl` runs in `test/metal/Project.toml`, whose
-  dependencies are Metal, Test and this package, developed from `../..`.
-  `runtests.jl` does not include it. See
+- The one exception is the device smoke run (proposed in step 4, decided
+  2026-09-24): `test/metal_tests.jl` runs in `test/metal/Project.toml`,
+  whose dependencies are Metal, Test and this package, developed from
+  `../..`. `runtests.jl` does not include it. See
   [On a device](#on-a-device-measured-in-step-4).
-- `.github/workflows/CI.yml` (proposed in step 0) has five cells
-  (amended in step 6: Erik added the fifth):
+- `.github/workflows/CI.yml` (proposed in step 0, decided 2026-09-24) has
+  five cells (amended in step 6: Erik added the fifth):
   - Julia 1.10 on Linux, at one thread;
   - the current release on Linux, with `--check-bounds=yes` and
     coverage;
@@ -1104,12 +1113,13 @@ touch, pinned and interleaved, and unpinned.
   Every cell but the bounds-checked one runs with `--check-bounds=auto`,
   so that the allocation tests run on the floor and at four threads.
   `julia-runtest`'s default, `yes`, would skip them in every cell.
-  There is no Metal cell (proposed in step 4): GitHub's hosted macOS
-  arm64 runners are virtual machines without Metal support. A push to
-  `main` that changes only Markdown files does not run CI, unless one of
-  them is `README.md`, whose `julia` block `readme_tests.jl` runs
-  (proposed in step 6; until step 6 every `.md` was ignored, so a
-  README-only change could break the suite unseen).
+  There is no Metal cell (proposed in step 4, decided 2026-09-24):
+  GitHub's hosted macOS arm64 runners are virtual machines without Metal
+  support. A push to `main` that changes only Markdown files does not run
+  CI, unless one of them is `README.md`, whose `julia` block
+  `readme_tests.jl` runs (proposed in step 6, decided 2026-09-24; until
+  step 6 every `.md` was ignored, so a README-only change could break the
+  suite unseen).
 
 ### Documentation (decided)
 
@@ -1119,11 +1129,11 @@ example, including a stage solver. A site can be added later without
 changing anything else.
 
 The README carries one badge, CI's, for `.github/workflows/CI.yml` on
-`main` of `eschnett/IMEXRungeKutta.jl` (proposed in step 4). CI's
-bounds-checked cell uploads coverage to Codecov on `main`, but only with
-a `CODECOV_TOKEN` secret that this repository may not have, and with
-`fail_ci_if_error: false`. So there is no Codecov badge until an upload
-has been seen to succeed.
+`main` of `eschnett/IMEXRungeKutta.jl` (proposed in step 4, decided
+2026-09-24). CI's bounds-checked cell uploads coverage to Codecov on
+`main`, but only with a `CODECOV_TOKEN` secret that this repository may
+not have, and with `fail_ci_if_error: false`. So there is no Codecov badge
+until an upload has been seen to succeed.
 
 ## Why not an existing package
 
@@ -1322,7 +1332,7 @@ The numbers of step 3's validation files, measured on an Apple M3 with
 Julia 1.13.0 and identical on 1.10.12. Each is asserted by its test, to
 the tolerance given, so that a regression is caught.
 
-**How the tests measure** (proposed in step 3):
+**How the tests measure** (proposed in step 3, decided 2026-09-24):
 - an observed order is the least-squares slope of `log error` against
   `log Δt` over three step sizes (`fitted_order`, in `test/problems.jl`);
 - a test asserts both the theory (the stated order, `O(ε)`, a formula)
@@ -1427,7 +1437,7 @@ largest over the steps and over both components; the order is fitted over
 `Δt_FE = Δx`, is the largest value at which 50 steps keep
 `TV(uⁿ⁺¹) ≤ max(TV(uⁿ), TV(φ))` to a relative 1e−12 (without relaxation,
 `TV(uⁿ⁺¹) ≤ TV(uⁿ)`), by bisection on `[0, 4]` to 1e−4 (proposed in step
-3). `C` is asserted to 1e−3.
+3, decided 2026-09-24). `C` is asserted to 1e−3.
 
 | | SSP coefficient (step 1) | `C`, no relaxation | `C`, `ε = 10⁻²` | `C`, `ε = 10⁻¹²` | stiff limit: TV rise in step 1 |
 |---|---|---|---|---|---|
@@ -1485,9 +1495,9 @@ real components, `Lu` implicit. Upstream is OrdinaryDiffEqSDIRK 2.9.6.
 - Our own ARS(4,4,3), the paper's, differs from upstream's by 2.5e−5 over
   the ten steps ("Cross-checks").
 - `test/Project.toml` adds OrdinaryDiffEqSDIRK with the compat bound
-  `"2.9.6"`, that is `[2.9.6, 3)` (proposed in step 3). A release that
-  fixes #4620 turns the two `@test_broken` into unexpected passes, which
-  fail the suite, and so is noticed.
+  `"2.9.6"`, that is `[2.9.6, 3)` (proposed in step 3, decided
+  2026-09-24). A release that fixes #4620 turns the two `@test_broken`
+  into unexpected passes, which fail the suite, and so is noticed.
 
 ## On a device (measured in step 4)
 
@@ -1495,9 +1505,9 @@ real components, `Lu` implicit. Upstream is OrdinaryDiffEqSDIRK 2.9.6.
 11.5.14), under Julia 1.13.0 and 1.10.12. The numbers are the same on both
 unless given for each.
 
-**How Metal gets in** (proposed in step 4). `PLAN.md` offered a separate
-environment or a conditional `Pkg.add` in the gated file. It is the
-separate environment, `test/metal/Project.toml`:
+**How Metal gets in** (proposed in step 4, decided 2026-09-24). `PLAN.md`
+offered a separate environment or a conditional `Pkg.add` in the gated
+file. It is the separate environment, `test/metal/Project.toml`:
 - `[deps]` Metal, Test and this package; `[compat]` Metal `"1.11"`;
   `[sources]` points this package at `../..`. Julia 1.11 and later read
   `[sources]`; 1.10 ignores it, so the command in `CLAUDE.md` runs
@@ -1510,10 +1520,10 @@ separate environment, `test/metal/Project.toml`:
   sandbox from within the test run, and resolve Metal against the whole
   test environment, oracle included.
 
-**The gate** (proposed in step 4). Without `IMEXRUNGEKUTTA_TEST_METAL=1`
-the file logs that it is skipped and exits 0 before loading anything. With
-it, a Metal that is not functional fails the run: the run was asked for.
-`runtests.jl` does not include the file.
+**The gate** (proposed in step 4, decided 2026-09-24). Without
+`IMEXRUNGEKUTTA_TEST_METAL=1` the file logs that it is skipped and exits 0
+before loading anything. With it, a Metal that is not functional fails the
+run: the run was asked for. `runtests.jl` does not include the file.
 
 **The ordinary suite never sees Metal** (tests, in `scaffold_tests.jl`
 and at the end of `runtests.jl`): Metal is in none of the `[deps]`,
@@ -1545,15 +1555,15 @@ scalar indexing then throws), against the same run on the CPU in
 - **The device agrees with the CPU bitwise**: 0 ulps after every step, in
   all four runs, on both Julia versions. So Metal contracted nothing to an
   FMA here, and its division rounded as the CPU's does.
-- **The tolerance is 4 ulps per step** (proposed in step 4), in units of
-  `eps(Float32) · max|u|`, cumulative: `4n` after step `n`. Contraction or
-  a differently rounded division changes roundings, not the arithmetic,
-  so the two runs differ by at most the sum of their rounding errors, and
-  those do not grow here (the stiff cells contract; the others grow by
-  `1 + O(Δt)`). The CPU run in `Float32` is 11.5 (SSP2(2,2,2)) and 15.4
-  (SSP3(4,3,3)) of these units from the same run in `Float64` after ten
-  steps, about 1.5 per step. A wrong coefficient is far outside it: the
-  two tableaus differ by 41349.
+- **The tolerance is 4 ulps per step** (proposed in step 4, decided
+  2026-09-24), in units of `eps(Float32) · max|u|`, cumulative: `4n` after
+  step `n`. Contraction or a differently rounded division changes
+  roundings, not the arithmetic, so the two runs differ by at most the sum
+  of their rounding errors, and those do not grow here (the stiff cells
+  contract; the others grow by `1 + O(Δt)`). The CPU run in `Float32` is
+  11.5 (SSP2(2,2,2)) and 15.4 (SSP3(4,3,3)) of these units from the same
+  run in `Float64` after ten steps, about 1.5 per step. A wrong
+  coefficient is far outside it: the two tableaus differ by 41349.
 - **The test has teeth**, checked by mutation of `lincomb!`: a scalar
   loop in place of the broadcast fails every device testset with
   "Scalar indexing is disallowed", and `Float64` coefficients fail them
@@ -1592,7 +1602,7 @@ Metal, from Metal's broadcast and not from this package.
 For the package design:
 
 - Where a TreeAMR state vector's ownership partition comes from
-  ([Stage arithmetic](#stage-arithmetic-decided-details-proposed)).
+  ([Stage arithmetic](#stage-arithmetic-decided)).
 - Confirm SSP2(3,3,2) against Pareschi & Russo (2005) (open, added in
   step 1). Its coefficients are the step-1 reviewer's recollection of the
   paper, verified only by the order conditions, `R(∞) = 0` and the SSP

@@ -376,11 +376,12 @@ end
     block_partition(blocks, segments)
 
 A partition for a state made of consecutive segments, each a sequence of
-equal-sized blocks, such as a multi-set state vector (proposed in step 5;
-it knows nothing of TreeAMR). `blocks[c]` is the range of block numbers
-that thread `c` owns, one per thread, as TreeAMR's `threadchunks(nblocks)`
-gives them. `segments` holds one `(offset, blocklength)` pair per
-segment: block `b` of that segment is the entries
+equal-sized blocks, such as a multi-set state vector (proposed in step 5,
+decided 2026-09-24; it knows nothing of TreeAMR). `blocks[c]` is the
+range of block numbers that thread `c` owns, one per thread, as TreeAMR's
+`threadchunks(nblocks)` gives them. `segments` holds one
+`(offset, blocklength)` pair per segment: block `b` of that segment is the
+entries
 `offset + (b − 1) blocklength .+ (1:blocklength)`. Thread `c` then owns
 one range per segment, the entries of its blocks there. The result is a
 `partition` for `init`, which checks it. See `CODE.md`, "Where the

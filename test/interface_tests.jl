@@ -150,7 +150,8 @@ end
 
 # CommonSolve's contract: `solve` is `solve!(init(…))`, and returns what
 # `solve!` returns, the integrator, here by a method of our own rather
-# than CommonSolve's generic fallback (proposed in step 2).
+# than CommonSolve's generic fallback (proposed in step 2,
+# decided 2026-09-24).
 @testset "solve(prob, tab; dt) returns the integrator, at t1" begin
     prob = decay_problem([1.0], (0.0, 1.0))
     integ = solve(prob, IMEXSSP3433(); dt = 0.1)
