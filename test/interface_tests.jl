@@ -201,8 +201,11 @@ end
         e isa ArgumentError ? e.msg : "not an ArgumentError: $e"
     end
     prob = decay_problem([1.0], (0.0, 1.0))
-    @test occursin("not implemented yet", msg(() -> init(prob, ARS222(); dt = 0.1,
-                                                         partition = :even)))
+    # A partition for a state that is not a CPU `Array` (step 5; the other
+    # partition refusals are in `owner_tests.jl`).
+    @test occursin("only for a CPU Array",
+                   msg(() -> init(decay_problem(view([1.0, 2.0], 1:2), (0.0, 1.0)), ARS222();
+                                  dt = 0.1, partition = :even)))
     @test occursin("floating-point",
                    msg(() -> init(decay_problem([1], (0.0, 1.0)), ARS222(); dt = 0.1)))
     @test occursin("t1 > t0",

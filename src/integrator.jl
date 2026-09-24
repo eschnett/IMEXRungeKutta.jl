@@ -103,6 +103,31 @@ function step_count(t0::Tt, t1::Tt, dt::Tt) where {Tt}
 end
 
 """
+    resolve_partition(u0, partition)
+
+The `partition` keyword of `init`, checked: `nothing` for the broadcast
+path, and otherwise an [`OwnerPartition`](@ref) of `eachindex(u0)`, for a
+CPU `Array` state only. A partition for any other array type is an
+`ArgumentError`, since the by-owner path indexes the state. See
+`CODE.md`, "Stage arithmetic".
+"""
+resolve_partition(u0, ::Nothing) = nothing
+function resolve_partition(u0, partition)
+    u0 isa Array ||
+        throw(ArgumentError("init: partition = $(repr(partition; context = :limit => true)) \
+                             is only for a CPU Array state, but the state is a \
+                             $(typeof(u0)): the by-owner stage arithmetic indexes the \
+                             state, and any other array type takes partition = nothing, \
+                             the broadcast"))
+    partition isa OwnerPartition || return owner_partition(length(u0), partition)
+    (partition.n == length(u0) && length(partition.ranges) == Threads.nthreads()) ||
+        throw(ArgumentError("init: the OwnerPartition covers $(partition.n) entries on \
+                             $(length(partition.ranges)) threads, but the state has \
+                             $(length(u0)) and there are $(Threads.nthreads()) threads"))
+    return partition
+end
+
+"""
     init(prob::IMEXProblem, tab::IMEXTableau; dt,
          stage_limiter = nothing, step_limiter = nothing,
          partition = nothing, alias_u0 = false)
@@ -128,23 +153,36 @@ Build an integrator for `prob` with the tableau `tab` (such as
   at `tⁿ⁺¹`; `integ.t` and `integ.nstep` advance after it returns.
 - **`alias_u0 = true`** makes `integ.u` be `u0` itself, which saves one
   state-sized array; by default `u0` is copied.
-- **`partition`** must be `nothing` (the broadcast stage arithmetic); the
-  by-owner arithmetic for a CPU `Array` is not implemented yet.
+- **`partition`** chooses the stage arithmetic. `nothing`, the default,
+  is one fused broadcast per combination, for any array type, device
+  arrays included; on the host it is serial. For a CPU `Array` state,
+  the by-owner path runs each combination on every thread at once, each
+  element on the thread that owns it, so that the stage arrays stay with
+  the threads that the caller's own kernels use:
+  - an explicit partition has one element per thread,
+    `Threads.nthreads()` of them; element `c` is a unit range or a
+    collection of unit ranges of indices into `u0`, owned by default-pool
+    thread `c`. Together they must cover `eachindex(u0)` exactly once,
+    and a gap, an overlap or an index out of bounds is an
+    `ArgumentError` naming the index;
+  - `:even` splits `eachindex(u0)` into `nthreads()` equal contiguous
+    ranges.
+
+  The result is bitwise the same on every path and at every thread
+  count. By owner, `init` also writes `integ.u` (unless aliased) and the
+  scratch through the partition, for first touch, and a step allocates a
+  few small objects per thread per combination, independent of the state
+  size (none at one thread).
 
 This builds the stage plan: the scratch arrays, from `similar(u0)` and
 written once, and the tableau's nonzero pattern compiled into types, so
-that [`step!`](@ref) is type-stable and allocation-free. See `CODE.md`,
-"The interface", "Time and the step count" and "The stage plan and
-storage".
+that [`step!`](@ref) is type-stable and, on the broadcast path,
+allocation-free. See `CODE.md`, "The interface", "Time and the step
+count", "The stage plan and storage" and "Stage arithmetic".
 """
 function CommonSolve.init(prob::IMEXProblem, tab::IMEXTableau; dt,
                           stage_limiter = nothing, step_limiter = nothing,
                           partition = nothing, alias_u0::Bool = false)
-    partition === nothing ||
-        throw(ArgumentError("init: partition = $(repr(partition)) is not implemented yet; \
-                             the by-owner stage arithmetic comes in step 5 of PLAN.md, \
-                             and until then only partition = nothing (broadcast) is \
-                             accepted"))
     u0 = prob.u0
     T = real(eltype(u0))
     T <: AbstractFloat ||
@@ -163,8 +201,9 @@ function CommonSolve.init(prob::IMEXProblem, tab::IMEXTableau; dt,
         throw(ArgumentError("init: dt = $dt must be positive and finite"))
     nsteps = step_count(t0, t1, dt)
     Δt = (t1 - t0) / nsteps
-    u = alias_u0 ? u0 : copy(u0)
-    plan = build_plan(tab, u, u0, T, Δt, partition)
+    part = resolve_partition(u0, partition)
+    u = alias_u0 ? u0 : copy_initial(u0, part)
+    plan = build_plan(tab, u, u0, T, Δt, part)
     return IMEXIntegrator(u, t0, Δt, prob.p, 0, nsteps, tab, t0, t1, prob.f_exp!,
                           prob.solve_imp!, stage_limiter, step_limiter, plan)
 end
@@ -181,10 +220,14 @@ end
     part = integ.plan.partition
     u = integ.u
     if S
-        # 1. u★, in `d_k` (or the extra array); `uⁿ` itself if the row is
-        # empty. 2. The stage solve, from `U = u★`, then `d_k = U − u★`.
-        isempty(st.terms) || lincomb!(st.ustar, u, st.terms, part)
-        copy_state!(st.U, st.ustar, part)
+        # 1. u★, in `d_k` (or the extra array), and `U = u★` with it; `uⁿ`
+        # itself if the row is empty. 2. The stage solve, from `U = u★`,
+        # then `d_k = U − u★`.
+        if isempty(st.terms)
+            copy_state!(st.U, st.ustar, part)
+        else
+            lincomb_copy!(st.ustar, st.U, u, st.terms, part)
+        end
         integ.solve_imp!(st.U, st.ustar, st.γΔt, integ.p, tn + st.c * integ.dt)
         I && increment!(st.d, st.U, st.ustar, part)
     elseif E && !isempty(st.terms)
@@ -223,8 +266,11 @@ last step sets `integ.t = t1` exactly.
 exception from `f_exp!`, `solve_imp!` or the stage limiter leaves
 `integ.u = uⁿ` and `integ.t = tⁿ`; after one from the step limiter,
 `integ.u` is undefined. A `step!` after the last step throws an
-`ArgumentError`. `step!` is type-stable and, for callbacks that do not
-allocate, allocation-free.
+`ArgumentError`. `step!` is type-stable. For callbacks that do not
+allocate, it is allocation-free on the broadcast path and, by owner, at
+one thread; by owner at more threads it allocates a few hundred bytes per
+thread per combination, whatever the state size (`CODE.md`, "By owner,
+as built").
 """
 function CommonSolve.step!(integ::IMEXIntegrator)
     n = integ.nstep

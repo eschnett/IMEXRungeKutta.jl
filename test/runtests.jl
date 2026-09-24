@@ -31,6 +31,9 @@ include("problems.jl")
     @testset "Mechanics" begin
         include("mechanics_tests.jl")
     end
+    @testset "Stage arithmetic by owner" begin
+        include("owner_tests.jl")
+    end
     @testset "Smoke order" begin
         include("smoke_order_tests.jl")
     end
