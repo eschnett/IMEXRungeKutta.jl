@@ -35,11 +35,12 @@ Rules that follow from `CODE.md` and govern every change:
 
 ## Current state
 
-**Requirements and background only** (2026-09-24). `CODE.md` records
-the requirements, the method, the survey of OrdinaryDiffEq and
-ClimaTimeSteppers, the test plan and the open questions. `src/` is still
-the Pkg template. The package design, and a `PLAN.md` if the work is
-split into steps, are next.
+**Design complete** (2026-09-24). `CODE.md` records the requirements,
+the method, the survey of OrdinaryDiffEq and ClimaTimeSteppers, the
+package design, the test plan and the open questions. One question is
+still open: where a TreeAMR state vector's ownership partition comes from.
+`src/` is still the Pkg template. `PLAN.md`, the implementation steps, is
+next; write no code before it is agreed.
 
 ## Commands
 
@@ -74,11 +75,12 @@ EntropyEOS):
 - Generic in the scalar type `T` and in the array type. No float literals
   in `T`-generic code: write `T(1//2)` or `oftype(x, 2)`. Float32 must
   work.
-- Stage arithmetic by broadcasting over `similar(u0)` arrays, so that
-  device arrays work. No scalar indexing into the state.
-- Run-time dependencies at most StaticArrays. SciMLBase is an open
-  question in `CODE.md`. Test-only dependencies go in `[extras]`, e.g.
-  OrdinaryDiffEqSDIRK as an oracle.
+- Stage arithmetic by one fused broadcast per combination over
+  `similar(u0)` arrays, so that device arrays work. No scalar indexing
+  into the state, except in the by-owner path for a CPU `Array`
+  (`CODE.md`, "Stage arithmetic").
+- The only run-time dependency is CommonSolve. Test-only dependencies go
+  in `[extras]`, e.g. OrdinaryDiffEqSDIRK as an oracle.
 - Unicode in mathematical contexts (`Δt`, `u★`, `γ`, `Ã`, `b̃`, `c̃`).
   `ArgumentError`s say *why*.
 - Docstrings are prose-first and point at `CODE.md`.

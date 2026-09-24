@@ -5,8 +5,9 @@ and why. Where the implementation shows it wrong or incomplete, amend it
 and say so ("(amended in step N)", "(measured in step N)"). Each design
 item is marked **(decided)**, **(proposed)** or **(open)**.
 
-**Status (2026-09-24):** requirements and background only. The package
-design (API, types, file layout, the implementation plan) is next.
+**Status (2026-09-24):** the [package design](#package-design) is
+complete, except where the partition for TreeAMR state vectors comes
+from (open). The implementation plan, `PLAN.md`, is next.
 
 ## Purpose
 
@@ -62,12 +63,15 @@ existed:
   condition, and restarts a fresh integrator after a regrid.
 - **Generic arrays.** Stage arithmetic is by broadcasting over
   `similar(u0)` arrays, so device arrays work. The package must not
-  require a particular array type.
+  require a particular array type. A faster path for a CPU `Array` is
+  allowed alongside (amended 2026-09-24, see
+  [Stage arithmetic](#stage-arithmetic-decided-details-proposed)).
 - **Julia 1.10 floor**, generic in the scalar type `T` (Float32 must
   work).
-- **Minimal dependencies.** At most StaticArrays at run time. SciMLBase
-  is (open), see [Open questions](#open-questions). Heavier packages
-  (OrdinaryDiffEqSDIRK) are test-only.
+- **Minimal dependencies.** Only CommonSolve at run time (amended
+  2026-09-24; this was "at most StaticArrays", with SciMLBase open). See
+  [Dependencies and names](#dependencies-and-names-decided). Heavier
+  packages (OrdinaryDiffEqSDIRK) are test-only.
 
 ## The method
 
@@ -89,7 +93,7 @@ Their implicit parts have `a_kk ≠ 0` on every stage. The ARS schemes have
 `a_11 = 0` (a trivial first implicit stage) and a zero first column in
 `A`.
 
-**Admissibility (proposed).** Because `g` is never evaluated, a stage
+**Admissibility (decided).** Because `g` is never evaluated, a stage
 with `a_kk = 0` has no implicit tendency. That is consistent only if
 column `k` of `A` and `b_k` are zero. The IMEX-SSP and ARS schemes satisfy
 this. ESDIRK-type additive schemes (KenCarp and the like) do not, since
@@ -100,16 +104,27 @@ throws an `ArgumentError` that says why.
 SSP2(2,2,2), SSP3(3,3,2) and ARS(2,2,2) involve `√2`, in closed form
 (`γ = 1 − 1/√2`, and so on). SSP3(4,3,3)'s `α, β, η` are printed to 14
 digits only (α = 0.24169426078821, β = 0.06042356519705,
-η = 0.12915286960590; β = α/4 to those digits). Both OrdinaryDiffEqSDIRK
-and ClimaTimeSteppers use exactly those 14 digits. So (proposed):
-- every tableau is held in extended precision (e.g. 256-bit `BigFloat`)
-  and converted to `T` once, when the integrator is built;
-- the rational ones are also held exactly;
-- SSP3(4,3,3)'s parameters are computed from the conditions in the paper
-  that fix them. If the paper does not fix them, the printed digits are
-  the definition, and that is recorded.
+η = 0.12915286960590). Both OrdinaryDiffEqSDIRK and ClimaTimeSteppers use
+exactly those 14 digits.
 
-**Properties to compute and record per tableau (proposed):**
+**SSP3(4,3,3) in closed form** (computed 2026-09-24, symbolically). With
+the explicit part and `b = b̃ = (0, 1/6, 1/6, 2/3)` fixed:
+- The third-order implicit condition `bᵀAc = 1/6` and the coupling
+  condition `bᵀAc̃ = 1/6` are the only order-3 conditions that involve
+  `α, β, η`. Together they give `β = α/4` and `η = (1 − 2α)/4`. Every
+  other condition up to order 3 holds identically.
+- L-stability, `R(∞) = 1 − bᵀA⁻¹𝟙 = 0`, then reduces to
+  `(2α − 1)(3α² − 9α + 2) = 0`. The root in `(0, 1/2)` is
+  **`α = (9 − √57)/6`** = 0.24169426078820838…
+- The printed digits are these values rounded to 14 digits. Upstream's
+  truncated coefficients leave order-condition residuals of about 2e−15.
+
+So every tableau here has a closed form. **(decided):**
+- the rational ones are held exactly, as `Rational{BigInt}`;
+- the others are held as 256-bit `BigFloat`, from their closed forms;
+- both are converted to `T` once, when the integrator is built.
+
+**Properties to compute and record per tableau (decided):**
 - the order conditions up to order 3, including the IMEX coupling
   conditions;
 - stiff accuracy (`b` equal to the last row of `A`);
@@ -119,23 +134,47 @@ and ClimaTimeSteppers use exactly those 14 digits. So (proposed):
 SSP3(4,3,3) is **not** stiffly accurate: `b = (0, 1/6, 1/6, 2/3)`, while
 the last row of `A` is `(β, η, 1/2 − β − η − α, α)`. So its order may
 drop in the stiff limit, and the ARS schemes, which are stiffly accurate,
-are the alternative if that matters. Its implicit part is expected to be
-L-stable (Pareschi & Russo 2005). Everything else is computed, not
-quoted.
+are the alternative if that matters. Its parameters are exactly those
+that make `R(∞) = 0` (above). Whether the implicit part is also A-stable,
+and so L-stable, is computed. Everything else is computed, not quoted.
 
-### One step (proposed)
+### One step (decided)
 
-For stages `k = 1, …, s`:
+Call stage `k` **explicit-used** if column `k` of `Ã` or `b̃_k` is
+nonzero, and **implicit-used** if column `k` of `A` below the diagonal or
+`b_k` is nonzero. For stages `k = 1, …, s`:
 
-1. `u★ = uⁿ + Δt Σ_{j<k} (ã_kj k̃_j + a_kj k_j)`.
-2. If `a_kk ≠ 0`: `solve_imp!(U_k, u★, a_kk Δt, p, tⁿ + c_k Δt)`, then
-   `k_k = (U_k − u★)/(a_kk Δt)`. Otherwise `U_k = u★`.
-3. `stage_limiter!(U_k, p, tⁿ + c̃_k Δt)`.
-4. `f_exp!(k̃_k, U_k, p, tⁿ + c̃_k Δt)`, **only if** column `k` of `Ã`
-   or `b̃_k` is nonzero.
+1. `u★ = uⁿ + Δt Σ_{j<k} ã_kj k̃_j + Σ_{j<k} (a_kj/a_jj) d_j`, summing
+   only over the explicit-used and implicit-used `j`.
+2. If `a_kk ≠ 0`: `solve_imp!(U, u★, a_kk Δt, p, tⁿ + c_k Δt)`, then, if
+   stage `k` is implicit-used, `d_k = U − u★`. Otherwise `U = u★`.
+3. If stage `k` is explicit-used:
+   `stage_limiter!(U, integ, p, tⁿ + c̃_k Δt)`, then
+   `f_exp!(k̃_k, U, p, tⁿ + c̃_k Δt)`.
 
-Then `uⁿ⁺¹ = uⁿ + Δt Σ_j (b̃_j k̃_j + b_j k_j)`, followed by
-`step_limiter!`.
+Then `uⁿ⁺¹ = uⁿ + Δt Σ_j b̃_j k̃_j + Σ_j (b_j/a_jj) d_j`, followed by
+`step_limiter!(uⁿ⁺¹, integ, p, tⁿ⁺¹)`.
+
+**Increments, not tendencies** (decided). The integrator stores
+`d_k = U − u★ = a_kk Δt k_k` and folds `1/a_kk` into the coefficients,
+which are computed exactly and then rounded to `T`. This is the tendency
+recovery `k_k = (U − u★)/(a_kk Δt)` of the requirements, without the
+division by `Δt` and the multiplication back.
+
+**A trivial first stage is `uⁿ`** (decided). In the ARS schemes, stage 1
+has `a_11 = 0` and an empty row, so `U = uⁿ`. The integrator passes `uⁿ`
+itself to `f_exp!`, with no copy and no stage limiter call. `uⁿ` has
+already been through the step limiter, or is the caller's initial state.
+
+**The stage limiter acts only where `f_exp!` reads** (decided). The
+limited stage value is read by `f_exp!` and by nothing else: the
+increment is taken before the limiter, and the update reads only
+increments and tendencies. So at a stage that is not explicit-used,
+such as stage 1 of SSP3(4,3,3), a limiter call would be dead work. It is
+skipped. This differs from OrdinaryDiffEq's SSPRK methods, which limit
+every stage. There, every stage is read by `f`, so they limit exactly
+what `f` reads too. A caller who wants the step's result limited as well
+passes the same function as `step_limiter!`.
 
 Three consequences of the stage contract, each one a decision:
 
@@ -147,22 +186,295 @@ Three consequences of the stage contract, each one a decision:
 - **One call per implicit stage** (decided). Convergence, fallbacks,
   flags and counters belong to the user's solver. The integrator has no
   nonlinear-solver loop, tolerance or retry.
-- **Untouched components stay untouched.** Where `solve_imp!` copies a
-  component of `u★` into `U`, its tendency is exactly zero, and the
+- **Untouched components stay untouched.** Where `solve_imp!` leaves a
+  component of `U` as it entered, a copy of `u★`, its increment is
+  exactly zero, and the
   component evolves by the explicit part alone, to the last bit. A
   conservative explicit scheme stays conservative. This is a test.
 
-**Round-off in the recovered tendency.** `k_k` carries an absolute error
-of about `ε|U|/(a_kk Δt)`, which enters the update multiplied by
-`b_k Δt`. That makes it `O(ε|U| b_k/a_kk)` per step, independent of
-`Δt`: harmless for these tableaus. A tableau with a tiny `a_kk` would be
-a poor fit.
+**Round-off in the recovered increment.** `d_k = U − u★` carries an
+absolute error of about `ε|U|`. It enters the update multiplied by
+`b_k/a_kk`, which makes it `O(ε|U| b_k/a_kk)` per step, independent of
+`Δt`. That is harmless for these tableaus. A tableau with a tiny `a_kk`
+would be a poor fit.
 
 **Cost.** The explicit right-hand side is usually the expensive call.
 Skipping zero columns, SSP3(4,3,3) makes three explicit evaluations per
-step, not four; OrdinaryDiffEqSDIRK makes five (below). Implicit
-tendencies are stored only for the columns of `A` and entries of `b` that
-use them.
+step, not four; OrdinaryDiffEqSDIRK makes five (below). Increments are
+stored only for implicit-used stages, and explicit tendencies only for
+explicit-used ones.
+
+## Package design
+
+Drafted and reviewed 2026-09-24. The first caller is TreeGRRMHD, whose `CODE.md`
+("Time integration") and `PLAN.md` (steps 4a–4c) say what it needs:
+- one integrator over TreeAMR's flat multi-set state vector, on CPU
+  threads or on a device;
+- a chunked driver with a fixed `Δt` per chunk and a fresh integrator
+  after each regrid;
+- a stage solver that flags and counts its own outcomes;
+- limiters. TreeGH's are integrator-free (GH-4,
+  `gh_stage_limit!(u, p, t)`), and TreeHydro's take OrdinaryDiffEq's
+  `(u, integrator, p, t)`;
+- stage arithmetic that keeps each block on the thread that owns it, as
+  TreeAMR now does (branch `claude/festive-bun-656842`, 2026-09-23).
+
+### Dependencies and names (decided)
+
+The package depends on **CommonSolve.jl** only, and adds methods to its
+`init`, `solve!`, `step!` and `solve`. CommonSolve has no dependencies.
+SciMLBase and OrdinaryDiffEq re-export these same functions, so this
+package can be loaded beside them without a name clash. StaticArrays is
+not needed. This amends the "at most StaticArrays" requirement.
+
+The alternatives, not taken:
+- **Own the names.** They clash with DifferentialEquations when both are
+  loaded, and the caller then has to qualify them.
+- **SciMLBase.** It brings problem types, solution types and callbacks,
+  none of which a fixed-step chunked driver uses. Its load time is not
+  small. TreeHydro depends on it through OrdinaryDiffEqSSPRK, but
+  TreeGRRMHD need not.
+
+### The interface (decided)
+
+    prob  = IMEXProblem(f_exp!, solve_imp!, u0, (t0, t1), p = nothing)
+    integ = init(prob, IMEXSSP3433(); dt,
+                 stage_limiter = nothing, step_limiter = nothing,
+                 partition = nothing, alias_u0 = false)
+    step!(integ)                       # one step
+    solve!(integ)                      # step to t1; returns integ
+    integ = solve(prob, IMEXSSP3433(); dt)  # init, then solve!
+
+- **The limiters are `init` keywords**, spelled as OrdinaryDiffEq's
+  `solve` keywords, `stage_limiter` and `step_limiter`. `nothing` means
+  no call. Below, the functions passed are called `stage_limiter!` and
+  `step_limiter!`.
+- **Public fields:** `integ.u`, `integ.t`, `integ.dt`, `integ.p`,
+  `integ.nstep` (steps taken), `integ.nsteps` (steps to `t1`) and
+  `integ.tableau`.
+- **`p` is optional** and defaults to `nothing`, as in SciML.
+- **`init` copies `u0`**, unless `alias_u0 = true`. Aliasing saves one
+  state-sized array.
+- **The caller may change `integ.u` in place between steps**
+  (decided). Nothing
+  carries over from one step to the next: no first-same-as-last stage and
+  no cached tendency. So an atmosphere reset or a diagnostic fix-up in
+  the driver is always safe.
+
+### The callback contracts (decided)
+
+- **`f_exp!(du, u, p, t)`** writes all of `du` and does not change `u`.
+  At a trivial first stage, `u` is `integ.u` itself.
+- **`solve_imp!(U, u★, γΔt, p, t)`** writes `U` so that
+  `U = u★ + γΔt g(U, t)`.
+  - `U` and `u★` are distinct arrays, and `u★` must not be changed.
+  - **On entry, `U` holds a copy of `u★`** (decided), so the solver
+    writes only the components it solves for.
+  - Its return value is ignored.
+- **`stage_limiter!(u, integrator, p, t)` and
+  `step_limiter!(u, integrator, p, t)`** (decided) change `u` in place.
+- **`γΔt` has type `T`**, and **`t` has the time type** (see
+  [Time and the step count](#time-and-the-step-count-decided)).
+- **`p` is passed through untouched.** No callback may resize its
+  arrays.
+
+**Why `U` enters as a copy of `u★`.** The untouched components are then
+untouched by construction, not by each caller remembering to copy them.
+The copy costs one pass over the state, which a caller would otherwise
+pay itself: TreeGRRMHD's Ohm solve changes only `E`, and every other
+set, including TreeGH's, has to come from `u★`. The alternative, a `U`
+that is undefined on entry, would save that pass only for a solver that
+writes every component anyway.
+
+**Why the limiter takes OrdinaryDiffEq's signature.** OrdinaryDiffEq's
+SSPRK methods call `(u, integrator, p, t)`, and so the limiters already
+written for them, such as TreeHydro's, work unchanged. What the
+integrator argument promises:
+- **Only the public fields are meaningful** (see
+  [The interface](#the-interface-decided)).
+- **During a step**, `integrator.u` is `uⁿ` and `integrator.t` is `tⁿ`,
+  as in OrdinaryDiffEq. The `t` argument is the time of `u`.
+- **The stage limiter's `u` is a scratch array**, never `integrator.u`,
+  and `integrator.u` must not be changed.
+- **The step limiter's `u` is `integrator.u`**, which then holds
+  `uⁿ⁺¹`, and its `t` is `tⁿ⁺¹`. `integrator.t` and `nstep` are advanced
+  after it returns.
+
+### Failures and exceptions (decided)
+
+**There is no status** (resolves an earlier open question). The stage
+solver owns convergence, fallbacks, flags and counters, and reaches them
+through `p`, as TreeGRRMHD's Ohm solve does. The integrator has nothing
+to do with a status: with a fixed `Δt` and no retry, only the caller can
+decide to shorten the step or stop.
+
+**Exceptions propagate, and a step is atomic up to its update.**
+`integ.u` is written only by the final update and by the step limiter.
+So an exception from `f_exp!`, `solve_imp!` or the stage limiter leaves
+`integ.u = uⁿ` and `integ.t = tⁿ`. The caller can then retry from `uⁿ`
+with a smaller `Δt`, in a fresh integrator. After an exception from the
+step limiter, `integ.u` is undefined.
+
+### Time and the step count (decided)
+
+- **The step count.** `init` takes `nsteps = ⌈(t1 − t0)/dt⌉` and then
+  `Δt = (t1 − t0)/nsteps`, which is at most the requested `dt`. The
+  ceiling has a tolerance of a few ulps, so that a chunk meant to be a
+  whole number of steps is not given one extra step by round-off.
+- **No accumulated time.** `tⁿ = t0 + n Δt` is computed afresh at each
+  step, not accumulated, and the last step sets `t = t1` exactly. `step!`
+  after the last step throws an `ArgumentError`.
+- **Two types.** The time type is that of `t0`, `t1` and `dt` after
+  promotion. The arithmetic type is `T = real(eltype(u0))`, so a complex
+  state works (the order tests use `u′ = iu − u`). Coefficients are
+  converted to `T`, and abscissae to the time type. A `Float32` state
+  with `Float64` time is allowed.
+
+### Tableaus are values (decided)
+
+- **`IMEXTableau{R}`** holds a name, `Ã`, `b̃`, `A` and `b`, with
+  `R = Rational{BigInt}` or `BigFloat`.
+- **The constructor checks** that the parts are square and of equal
+  size, that `Ã` is strictly lower triangular and `A` lower triangular,
+  and the [admissibility](#tableaus) condition. Each failure is an
+  `ArgumentError` that says why.
+- **Named constructors** (decided): `IMEXSSP222()`, `IMEXSSP2322()`,
+  `IMEXSSP3332()`, `IMEXSSP3433()`, `ARS222()` and `ARS443()`.
+  - These are OrdinaryDiffEq's names, so an oracle test reads as a
+    comparison of like with like.
+  - `IMEXSSPksσp` is Pareschi–Russo's SSPk(s,σ,p). The short
+    `IMEXSSP222` is SSP2(2,2,2).
+  - They clash with OrdinaryDiffEqSDIRK's exports, so the tests
+    `import` it and qualify its names.
+  - They are functions returning an `IMEXTableau`, not constants,
+    because a `BigFloat` does not survive precompilation reliably.
+- **A caller's own tableau** goes through the same constructor.
+- **Properties are computed in the tests.** The order conditions,
+  L-stability and the SSP coefficient are not package API.
+
+Values suffice because the stage plan below gives the compiler the
+tableau's structure anyway. This resolves "values or types".
+
+### The stage plan and storage (decided)
+
+`init` compiles the tableau for `T` and `Δt` into a **stage plan**:
+- per stage, a tuple of the `(coefficient, array)` pairs of its `u★`,
+  with only the nonzero terms;
+- per stage, whether it solves (`a_kk ≠ 0`), and whether it is
+  explicit-used and implicit-used;
+- the update, in the same form.
+
+The plan is a heterogeneous tuple whose type records the tableau's
+nonzero pattern. `init` is therefore type-unstable, once, behind a
+function barrier. `step!` is type-stable and allocation-free, and it is
+unrolled over the stages.
+
+A **structural zero is never read**. The array for a skipped tendency is
+not allocated, so no coefficient multiplies it, and `0·NaN` cannot occur
+(TreeGRRMHD: "masks branch, never multiply").
+
+**Storage.** All scratch comes from `similar(u0)`. `init` writes it once
+through the same partition as the stage arithmetic (below), so that
+first touch puts each page on the NUMA domain that will use it. Nothing
+reads that initial value. `u★` is formed in the array that will then
+hold `d_k`, since `d_k = U − u★` can overwrite `u★` element by element.
+So the scratch is:
+- `U`;
+- one array per implicit-used stage;
+- one array per explicit-used stage;
+- one more if some solving stage is not implicit-used.
+
+For SSP3(4,3,3) that is 1 + 4 + 3 = 8 arrays, besides `integ.u`.
+
+### Stage arithmetic (decided, details proposed)
+
+**Every combination is one fused linear combination**,
+`dst = x₀ + Σ c_j x_j`. That is one pass that reads `m + 1` arrays and
+writes one, never a sequence of axpy passes. On the host this arithmetic
+is limited by memory bandwidth. TreeWave measured it as 79% of a
+64-thread RK4 step, flat at 1.0× at every thread count.
+
+**Where the data lives matters as much as how many threads touch it.**
+TreeAMR measured this on a 64-core EPYC 7543 (2026-09-23; `CODE.md`,
+"What one process loses", on branch `claude/festive-bun-656842`):
+- A block's data streams up to 2.7× faster when the core that last
+  touched it touches it again.
+- Launching each phase on whichever thread was free cost the RHS 2.4×.
+- TreeAMR now runs every per-block pass on the block's owner. Block `b`
+  belongs to thread `c` if chunk `c` of `threadchunks(nblocks)` contains
+  it. Chunk `c` runs as a sticky task placed on default-pool thread `c`
+  (`jl_set_task_tid`), which also nests inside other parallel loops.
+
+The stage arrays are read and written by the caller's kernels, which run
+by owner: `f_exp!`, through `scatter!`, and `solve_imp!`. So the stage
+arithmetic must give each element to the thread that owns it too.
+Otherwise every combination moves the whole state to other cores, twice
+per stage. So there are two paths:
+
+- **Broadcast, the default and the first to be implemented.** One fused
+  broadcast per combination. It works for any array type, and on a
+  device it already is a parallel kernel. On the host it is serial.
+- **By owner, for a CPU `Array` with more than one thread.** The caller
+  passes `partition`, a collection of `Threads.nthreads()` elements.
+  Element `c` is an iterable of `UnitRange{Int}` index ranges into `u`,
+  owned by thread `c`.
+  - Each combination is a plain loop over thread `c`'s ranges, run as a
+    sticky task on default-pool thread `c`, as TreeAMR places chunk `c`.
+  - Forming `u★` writes the `d_k` array and `U` in the same pass.
+  - For TreeAMR's multi-set state vector, thread `c` owns one range per
+    field set: the entries of its blocks in that set's segment.
+  - `init` checks that the ranges are disjoint and cover `u` exactly.
+    If they do not, it throws an `ArgumentError` that says which index
+    is missing or doubled.
+  - `partition = :even` splits `eachindex(u)` into `nthreads()` equal
+    contiguous ranges, by TreeAMR's `threadchunks` rule. That keeps the
+    integrator's own passes stable from step to step, but it does not
+    match anyone else's ownership.
+  - This is the one place that indexes into the state, and it is
+    confined to `Array`.
+- **Keywords:** `partition = nothing` (broadcast), `:even`, or explicit
+  ranges. A partition given for a non-`Array` state is an
+  `ArgumentError`.
+
+**The result does not depend on the path or on the thread count.** Each
+element is computed alone, with its terms summed in a fixed order, so
+broadcast and every partition give the same bits. This is a test.
+
+**Where the partition comes from** (open). TreeGRRMHD needs a TreeAMR
+function that returns, for a tuple of field sets, the per-thread index
+ranges into their state vector. It is the same ownership rule
+`launch_by_owner!` already uses. Until TreeAMR has it, the caller builds
+the ranges from `threadchunks(nblocks)` and the set layout. This is a
+request to add to TreeGRRMHD's upstream list, not a dependency here.
+
+**Rejected:**
+- **Polyester** (`RK4(thread = True())`). TreeWave measured it as worse,
+  because it starts a second thread pool.
+- **KernelAbstractions.** It would be a dependency or an extension. Its
+  default CPU schedule is exactly the affinity-losing launch that
+  TreeAMR measured, and its static schedule refuses to nest.
+- **A caller-supplied kernel.** It would push the bandwidth question onto
+  every caller.
+
+The combination sits behind one internal function, so the owner path
+can come in a later step without changing the interface.
+
+### File layout (decided)
+
+- `src/IMEXRungeKutta.jl`: the module and its exports.
+- `src/tableau.jl`: `IMEXTableau`, its checks, and the conversion to `T`.
+- `src/tableaus.jl`: the six tableaus, in closed form.
+- `src/plan.jl`: the stage plan.
+- `src/lincomb.jl`: fused linear combinations, broadcast and threaded.
+- `src/integrator.jl`: `IMEXProblem`, `init`, `step!` and `solve!`.
+- `test/`: one file per group under [Testing](#testing-decided).
+
+### Documentation (decided)
+
+README and docstrings, no Documenter site for now. Docstrings are
+prose-first and point at this document. The README has a worked
+example, including a stage solver. A site can be added later without
+changing anything else.
 
 ## Why not an existing package
 
@@ -206,7 +518,7 @@ had several regressions in 2026. The semantics above (tendency before
 limiter, one call per stage) would rest on behaviour upstream does not
 promise. Revisit if upstream gains a user stage-solver hook.
 
-**Use as a test oracle** (proposed). Upstream agrees with a direct
+**Use as a test oracle** (decided). Upstream agrees with a direct
 reference step to 1e−16 on a linear problem with default settings. Two
 restrictions apply:
 - the state must be real (its default AD Jacobian rejects a complex
@@ -234,7 +546,7 @@ It still does not fit:
 - Its dependencies (ClimaComms, Krylov, LinearOperators, NVTX) and its
   design centre, climate models on ClimaCore spectral elements.
 
-## Testing (proposed)
+## Testing (decided)
 
 Testset names are claims, each opening with a comment that names the
 failure mode it guards.
@@ -251,10 +563,27 @@ failure mode it guards.
     arguments (a mock);
   - `f_exp!` is called once per nonzero column, at `tⁿ + c̃_k Δt` (a
     mock): three times per SSP3(4,3,3) step;
+  - the stage limiter is called exactly before each `f_exp!` call, on
+    the same array, and never on `integ.u` (a mock);
+  - at a trivial first stage, `f_exp!` receives `integ.u` itself;
+  - scratch filled with NaN before the first step leaves no NaN in the
+    result, so no structural zero is read;
+  - an exception thrown by `solve_imp!` leaves `integ.u` and `integ.t`
+    unchanged;
   - with `g ≡ 0`, the result equals the explicit RK method;
   - untouched components match the explicit-only run bitwise;
+  - broadcast, `partition = :even` and an explicit multi-range
+    partition give bitwise identical results, at one thread and at four;
+  - under a partition, each range is processed on its thread (a mock
+    records `Threads.threadid()` per range);
+  - a partition with a gap or an overlap is refused;
   - a Float32 run works;
-  - a device smoke run passes, gated by an environment variable.
+  - a device smoke run passes on Metal, gated by
+    `IMEXRUNGEKUTTA_TEST_METAL=1`. It is a short `Float32` run on an
+    `MtlArray` state with scalar indexing disallowed, so it covers the
+    broadcast path and checks that nothing indexes the state. How Metal
+    enters the test environment without being installed everywhere is
+    settled in the plan.
 - **Order:**
   - on the split linear ODE `u′ = iu − u`, the observed order equals the
     tableau's, ±0.1;
@@ -275,28 +604,11 @@ failure mode it guards.
 
 For the package design:
 
-- **The API.** A sketch carried over from the requirements:
+- Where a TreeAMR state vector's ownership partition comes from
+  ([Stage arithmetic](#stage-arithmetic-decided-details-proposed)).
 
-      prob  = IMEXProblem(f_exp!, solve_imp!, u0, (t0, t1), p;
-                          stage_limiter! = nothing, step_limiter! = nothing)
-      integ = init(prob, tableau; dt)   # dt adjusted to hit t1 in whole steps
-      step!(integ); solve!(integ)       # integ.u, integ.t
+Deferred:
 
-  Open points:
-  - whether to use SciMLBase's `init`/`solve!`/`step!` generics and
-    problem types, or to own the names (SciMLBase is not light);
-  - the limiter signatures: OrdinaryDiffEq passes the integrator,
-    `(u, integrator, p, t)`, and the sketch passes `(u, p, t)`;
-  - whether tableaus are values or types.
-- **Stage arithmetic.** Plain broadcasting is serial on the CPU; a
-  downstream code measured that serial integrator arithmetic caps a
-  threaded step at 3.6×. The options are:
-  - fused broadcasts only;
-  - an optional threaded or KernelAbstractions path (a dependency);
-  - letting the caller supply the linear-combination kernel.
-- **Failure reporting.** The solver owns convergence, but a step may
-  still need to report that a stage failed. Should `solve_imp!` return a
-  status, and does the integrator count, stop, or ignore it?
 - **Scope beyond fixed steps.** Embedded error estimates (the IMEX-SSP
   schemes have none), dense output, low-storage forms and multirate are
   out of scope unless a use case appears.
