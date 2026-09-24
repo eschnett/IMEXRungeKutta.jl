@@ -18,8 +18,6 @@ review pass. Erik decided the steps' proposals on 2026-09-24, all but one.
 Open or pending:
 - where the partition for TreeAMR state vectors comes from (open;
   [Stage arithmetic](#stage-arithmetic-decided));
-- SSP2(3,3,2)'s coefficients against Pareschi & Russo (2005) (open;
-  [Open questions](#open-questions));
 - the Symmetry run of `bench/symmetry_stage_arithmetic.sh`, which is
   Erik's, and the one decision still proposed, fresh tasks rather than
   persistent workers, which waits on it
@@ -312,31 +310,35 @@ reading only, with OrdinaryDiffEqSDIRK 2.9.6
 `src/solvers/imex_tableaus.jl`, fetched 2026-09-24).
 - The ARS schemes were also checked against the paper itself, from
   Erik's copy.
-- Pareschi & Russo's paper was not at hand. Where the citations in
-  `src/tableaus.jl` give a table number for it, the number is
-  OrdinaryDiffEqSDIRK's, and they say so.
+- The five Pareschi–Russo schemes were checked against the paper itself
+  (amended 2026-09-24): the preprint arXiv:1009.2757 (dated May 6, 2004),
+  Tables 2–6, whose tableaus are identical to those of the October 2003
+  preprint (NTNU conservation preprint 2004-063). All five agree with
+  `src/tableaus.jl` coefficient for coefficient, and SSP3(4,3,3) prints
+  the 14 digits quoted under "Exact coefficients". `src/tableaus.jl`
+  cites them by those table numbers, which OrdinaryDiffEqSDIRK's
+  comments give one higher for SSP3(3,3,2) and SSP3(4,3,3) (6 and 7),
+  perhaps the published numbering.
 - SSP2(2,2,2), SSP2(3,2,2) (`SSP322` there), SSP3(3,3,2) (`SSP332`) and
   ARS(2,2,2) agree with both, coefficient for coefficient. ARS(2,2,2)
   also agrees with ARS (1997) §2.6, p. 158: `γ = (2 − √2)/2`,
   `δ = 1 − 1/(2γ)`, explicit weights `(δ, 1 − δ, 0)`.
 - SSP2(3,3,2) is in neither upstream (amended in step 1).
-  - Its coefficients are from the step-1 reviewer's (Claude's)
-    recollection of Pareschi & Russo (2005), not a transcription.
-  - They are verified only by the order conditions, `R(∞) = 0` and the
-    SSP coefficient. These give order 2, `bᵀAc − 1/6 = 1/24` at order 3,
+  - Its coefficients were first the step-1 reviewer's (Claude's)
+    recollection of the paper. They are now checked against it: they
+    are Table 4 of arXiv:1009.2757 exactly (amended 2026-09-24; this was
+    open).
+  - The order conditions give order 2, `bᵀAc − 1/6 = 1/24` at order 3,
     `R(∞) = 0` and SSP coefficient 2.
-  - They are not yet checked against the paper, which is not available
-    here (open; see [Open questions](#open-questions)).
   - It has no oracle.
-  - Step 3 adds evidence, not a confirmation (measured in step 3): the
+  - Step 3's measurements agree (measured in step 3): the
     observed order is 2.003 on `u′ = iu − u` and 2.001 on
     `u′ = −u + cos t`; on the Kaps problem it is second order at every
     `ε`; the measured TVD threshold without relaxation is 2.0000, its SSP
     coefficient; and in the stiff limit it lands where a stiffly accurate
     implicit part must (`wᵀ𝟙 = 0`, `wᵀc̃ = 1/4`, in
     [Asymptotic preservation](#asymptotic-preservation)). These test the
-    integrated scheme, where the order conditions test the coefficients;
-    neither is a comparison with the paper.
+    integrated scheme, where the order conditions test the coefficients.
 - SSP3(4,3,3) (`SSP433`) agrees with both, up to their 14-digit
   `α, β, η`, which are the closed form rounded (a test).
 - **ARS(4,4,3) disagrees in `b̃`.**
@@ -354,8 +356,8 @@ reading only, with OrdinaryDiffEqSDIRK 2.9.6
     conditions by up to 0.076 (a test). But it reads the explicit
     tendency of stage 5, so it makes five explicit evaluations per step,
     not four.
-  - This is a possible upstream issue, for Erik to report. Nothing has
-    been filed.
+  - Erik reported it upstream, to SciML/OrdinaryDiffEq.jl, on
+    2026-09-24 (amended 2026-09-24).
   - Step 3's oracle comparison of ARS(4,4,3) must therefore compare with
     `IMEXTableau("…", Ã, b, A, b)`, built from `ARS443()`'s parts, not
     with `ARS443()`.
@@ -1202,10 +1204,9 @@ restrictions apply:
   the comparison for ARS(4,4,3) is against a tableau built with upstream's
   `b̃`;
 - SSP2(3,3,2) is in neither upstream, so it has no oracle (amended in
-  step 1). Its coefficients, recalled by the step-1 reviewer, rest on the
-  order conditions, `R(∞) = 0` and the SSP coefficient alone, until they
-  are checked against the paper (open). Step 3's measurements are further
-  evidence ("Cross-checks").
+  step 1). Its coefficients are checked against the paper, Table 4 of
+  arXiv:1009.2757 (amended 2026-09-24), and step 3's measurements agree
+  with them ("Cross-checks").
 
 The oracle comparisons are in [The oracle](#the-oracle).
 
@@ -1612,13 +1613,6 @@ For the package design:
 
 - Where a TreeAMR state vector's ownership partition comes from
   ([Stage arithmetic](#stage-arithmetic-decided)).
-- Confirm SSP2(3,3,2) against Pareschi & Russo (2005) (open, added in
-  step 1). Its coefficients are the step-1 reviewer's recollection of the
-  paper, verified only by the order conditions, `R(∞) = 0` and the SSP
-  coefficient. See "Cross-checks" under [Tableaus](#tableaus). Step 3's
-  observed orders, stiff-limit behaviour and TVD threshold agree with
-  them, which is evidence, not the check against the paper (amended in
-  step 3).
 
 Deferred:
 
@@ -1634,7 +1628,9 @@ Deferred:
 
 - L. Pareschi and G. Russo, *Implicit–explicit Runge–Kutta schemes and
   applications to hyperbolic systems with relaxation*, J. Sci. Comput.
-  25 (2005) 129–155.
+  25 (2005) 129–155. Preprint arXiv:1009.2757 (May 2004), whose table
+  numbers `src/tableaus.jl` cites; an earlier preprint is
+  https://www.math.ntnu.no/conservation/2004/063.pdf (October 2003).
 - U. M. Ascher, S. J. Ruuth and R. J. Spiteri, *Implicit–explicit
   Runge–Kutta methods for time-dependent partial differential
   equations*, Appl. Numer. Math. 25 (1997) 151–167.

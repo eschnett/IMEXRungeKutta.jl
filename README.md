@@ -109,10 +109,11 @@ What is tested, and recorded in `CODE.md`:
   says how.
 
 Known limits:
-- SSP2(3,3,2) is in neither OrdinaryDiffEq nor ClimaTimeSteppers, and its
-  coefficients have not yet been checked against Pareschi & Russo (2005).
-  They pass the order conditions, `R(∞) = 0`, and the observed-order,
-  stiff-limit and total-variation tests.
+- SSP2(3,3,2) is in neither OrdinaryDiffEq nor ClimaTimeSteppers, so it
+  has no oracle. Its coefficients are checked against Pareschi & Russo
+  (Table 4 of arXiv:1009.2757), and it passes the order conditions,
+  `R(∞) = 0`, and the observed-order, stiff-limit and total-variation
+  tests.
 - The broadcast stage arithmetic is serial on the host; `partition` is the
   threaded path, for a CPU `Array` only. Where a TreeAMR state vector's
   partition comes from is still open (`CODE.md`, "Stage arithmetic").

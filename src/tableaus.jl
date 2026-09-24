@@ -10,9 +10,11 @@
 # 2026-09-24), by reading them, except SSP2(3,3,2), which neither has.
 # `CODE.md` ("Tableaus", "Cross-checks") records the one disagreement. The
 # ARS schemes are cited by the paper's own section and page, checked
-# against it. The Pareschi–Russo table numbers are OrdinaryDiffEqSDIRK's,
-# as that paper was not at hand. The independent check of each
-# transcription is the order conditions in `test/tableau_tests.jl`.
+# against it. The Pareschi–Russo schemes are cited by their table in the
+# preprint arXiv:1009.2757 (May 2004), checked against it (Tables 2–6 are
+# identical in the October 2003 preprint); the published version may
+# number them differently. The independent check of each transcription is
+# the order conditions in `test/tableau_tests.jl`.
 
 # `1 − 1/√2`, the diagonal of SSP2(2,2,2), SSP3(3,3,2) and ARS(2,2,2),
 # which makes each implicit part L-stable. Call inside
@@ -29,7 +31,8 @@ Returns an [`IMEXTableau`](@ref) of 256-bit `BigFloat`; the measured
 properties are in `CODE.md`, "Tableaus".
 """
 function IMEXSSP222()
-    # Pareschi & Russo (2005), IMEX-SSP2(2,2,2), the L-stable scheme.
+    # Pareschi & Russo (2005), IMEX-SSP2(2,2,2), the L-stable scheme
+    # (Table 2 of arXiv:1009.2757).
     return with_coefficient_precision() do
         γ = gamma_sqrt2()
         z = zero(BigFloat)
@@ -58,7 +61,7 @@ it; SSP2(3,3,2) is [`IMEXSSP2332`](@ref). The measured properties are in
 """
 function IMEXSSP2322()
     # Pareschi & Russo (2005), IMEX-SSP2(3,2,2), the stiffly accurate
-    # scheme (Table 3 in OrdinaryDiffEqSDIRK's numbering).
+    # scheme (Table 3 of arXiv:1009.2757).
     q(x) = Rational{BigInt}(x)
     Ã = q.([0 0 0
             0 0 0
@@ -79,19 +82,16 @@ and all solving, second order, with the diagonal `(1/4, 1/4, 1/3)` and a
 stiffly accurate implicit part. The explicit part is the three-stage
 second-order SSP method (SSP coefficient 2). It is rational, and so held
 exactly as `Rational{BigInt}`. Neither OrdinaryDiffEqSDIRK nor
-ClimaTimeSteppers has it, so it has no oracle. Its coefficients are from
-the step-1 reviewer's (Claude's) recollection of the paper, verified only
-by the order conditions, `R(∞) = 0` and the SSP coefficient, and not yet
-checked against the paper (open in `CODE.md`). Not to be confused with
+ClimaTimeSteppers has it, so it has no oracle; its coefficients are
+checked against the paper (Table 4 of arXiv:1009.2757). Not to be
+confused with
 [`IMEXSSP2322`](@ref), SSP2(3,2,2). The measured properties are in
 `CODE.md`, "Tableaus".
 """
 function IMEXSSP2332()
     # Pareschi & Russo (2005), IMEX-SSP2(3,3,2), the stiffly accurate
-    # scheme with three explicit stages. The coefficients are from the
-    # step-1 reviewer's (Claude's) recollection of the paper, verified only
-    # by the order conditions, R(∞) = 0 and the SSP coefficient, and not
-    # yet checked against the paper; in neither upstream.
+    # scheme with three explicit stages (Table 4 of arXiv:1009.2757); in
+    # neither upstream.
     q(x) = Rational{BigInt}(x)
     Ã = q.([0 0 0
             1//2 0 0
@@ -114,8 +114,8 @@ explicit part is the three-stage third-order SSP method of Shu & Osher
 `BigFloat`; the measured properties are in `CODE.md`, "Tableaus".
 """
 function IMEXSSP3332()
-    # Pareschi & Russo (2005), IMEX-SSP3(3,3,2), the L-stable scheme (Table 6
-    # in OrdinaryDiffEqSDIRK's numbering).
+    # Pareschi & Russo (2005), IMEX-SSP3(3,3,2), the L-stable scheme (Table 5
+    # of arXiv:1009.2757).
     return with_coefficient_precision() do
         γ = gamma_sqrt2()
         z = zero(BigFloat)
@@ -148,8 +148,8 @@ in `CODE.md`). The implicit part is not stiffly accurate. Returns an
 in `CODE.md`, "Tableaus".
 """
 function IMEXSSP3433()
-    # Pareschi & Russo (2005), IMEX-SSP3(4,3,3), the L-stable scheme (Table 7
-    # in OrdinaryDiffEqSDIRK's numbering), with the printed
+    # Pareschi & Russo (2005), IMEX-SSP3(4,3,3), the L-stable scheme (Table 6
+    # of arXiv:1009.2757), with the printed
     # α = 0.24169426078821, β = 0.06042356519705, η = 0.12915286960590
     # replaced by their closed forms.
     return with_coefficient_precision() do

@@ -48,9 +48,9 @@ const ORDER_TABLE = [
 
 # A mis-weighted stage, a wrongly recovered increment or a coupling term
 # summed with the wrong coefficient drops at least one order on the split
-# linear problem. SSP2(3,3,2)'s coefficients are the step-1 reviewer's
-# recollection, not a transcription (open in `CODE.md`), so for it this
-# is part of the evidence, beside its order conditions.
+# linear problem. SSP2(3,3,2) has no oracle, so for it this is the only
+# end-to-end check against an independent reference, beside its order
+# conditions.
 @testset "On u′ = iu − u (complex, iu explicit) each tableau has its order, ±0.1" begin
     @test length(ORDER_TABLE) == 7
     for spec in ORDER_TABLE

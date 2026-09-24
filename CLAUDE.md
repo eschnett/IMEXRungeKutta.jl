@@ -44,8 +44,6 @@ ClimaTimeSteppers, the package design as built and measured, the tests
 and the open questions. Erik decided every proposal the steps made but
 one on 2026-09-24. Open or pending:
 - where a TreeAMR state vector's ownership partition comes from (open);
-- whether SSP2(3,3,2)'s coefficients, recalled by the step-1 reviewer
-  rather than transcribed, match Pareschi & Russo (2005) (open);
 - the Symmetry run of `bench/symmetry_stage_arithmetic.sh`, which is
   Erik's, and the one decision still proposed, fresh sticky tasks rather
   than persistent workers for the owner path, which waits on it

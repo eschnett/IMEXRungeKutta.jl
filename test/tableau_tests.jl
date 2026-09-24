@@ -178,9 +178,8 @@ end
         @test abs(tab.A[2, 2] - (1 - 1 / sqrt(BigFloat(2)))) < 1e-70
         @test abs(tab.Ã[3, 1] + 1 / sqrt(BigFloat(2))) < 1e-70
     end
-    # SSP2(3,3,2) as the reviewer recalled it from the paper (not yet
-    # checked against it), with the order-3 miss the review computed
-    # symbolically: bᵀAc − 1/6 = 1/24.
+    # SSP2(3,3,2) as Table 4 of arXiv:1009.2757 prints it, with the order-3
+    # miss the review computed symbolically: bᵀAc − 1/6 = 1/24.
     tab = IMEXSSP2332()
     @test Dict(order_residuals(tab, 3))["bᵀAc"] == 1 // 24
     @test [tab.A[k, k] for k in 1:3] == [1 // 4, 1 // 4, 1 // 3]
