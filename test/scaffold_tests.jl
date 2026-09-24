@@ -52,3 +52,37 @@ end
     @test project["compat"]["julia"] == "1.10"
     @test !haskey(project, "sources")
 end
+
+# Metal in the package's test environment would download and precompile a
+# GPU stack on every `Pkg.test()`, on Linux too, for a test that runs only
+# on request ("Commands" in `CLAUDE.md`). The resolved environment is
+# checked, not just `Project.toml`, since a test dependency could bring it
+# in. Under `Pkg.test()` the load path is that environment alone, so
+# `find_package` then answers for it; under a plain `julia --project=.` it
+# would also search the global environment, which may well have Metal.
+@testset "Metal is not in the ordinary test environment" begin
+    project = TOML.parsefile(joinpath(pkgdir(IMEXRungeKutta), "Project.toml"))
+    for section in ("deps", "weakdeps", "extras")
+        @test !haskey(get(project, section, Dict()), "Metal")
+    end
+    @test "Metal" ∉ project["targets"]["test"]
+    manifest = Base.project_file_manifest_path(Base.active_project())
+    @test manifest !== nothing
+    manifest === nothing || @test !haskey(TOML.parsefile(manifest)["deps"], "Metal")
+    if "@v#.#" ∉ LOAD_PATH
+        @test Base.find_package("Metal") === nothing
+    end
+end
+
+# The Metal environment is run by hand, so nothing else would notice it
+# naming a different package, or no longer pointing at this checkout.
+@testset "test/metal/Project.toml develops this package and adds Metal" begin
+    root = pkgdir(IMEXRungeKutta)
+    project = TOML.parsefile(joinpath(root, "Project.toml"))
+    metal = TOML.parsefile(joinpath(root, "test", "metal", "Project.toml"))
+    @test metal["deps"]["IMEXRungeKutta"] == project["uuid"]
+    @test sort(collect(keys(metal["deps"]))) == ["IMEXRungeKutta", "Metal", "Test"]
+    source = joinpath(root, "test", "metal", metal["sources"]["IMEXRungeKutta"]["path"])
+    @test realpath(source) == realpath(root)
+    @test isfile(joinpath(root, "test", "metal_tests.jl"))
+end
