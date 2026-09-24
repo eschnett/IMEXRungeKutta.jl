@@ -13,6 +13,12 @@ using IMEXRungeKutta
 const CHECK_BOUNDS_FORCED = Base.JLOptions().check_bounds == 1
 @info "Running the tests on $(Threads.nthreads()) thread(s)" CHECK_BOUNDS_FORCED
 
+# Test-only helpers: the order conditions, stability and SSP properties.
+include("tableau_properties.jl")
+
 @testset "IMEXRungeKutta.jl" begin
     include("scaffold_tests.jl")
+    @testset "Tableaus" begin
+        include("tableau_tests.jl")
+    end
 end
