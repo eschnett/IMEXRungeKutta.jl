@@ -39,8 +39,8 @@ Rules that follow from `CODE.md` and govern every change:
 the method, the survey of OrdinaryDiffEq and ClimaTimeSteppers, the
 package design, the test plan and the open questions. One question is
 still open: where a TreeAMR state vector's ownership partition comes from.
-`src/` is still the Pkg template. `PLAN.md`, the implementation steps, is
-next; write no code before it is agreed.
+`src/` is still the Pkg template. `PLAN.md` (drafted, under review)
+splits the work into steps 0–6; write no code before it is agreed.
 
 ## Commands
 

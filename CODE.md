@@ -7,7 +7,8 @@ item is marked **(decided)**, **(proposed)** or **(open)**.
 
 **Status (2026-09-24):** the [package design](#package-design) is
 complete, except where the partition for TreeAMR state vectors comes
-from (open). The implementation plan, `PLAN.md`, is next.
+from (open). The implementation plan is `PLAN.md` (drafted); step 0 is
+next.
 
 ## Purpose
 
