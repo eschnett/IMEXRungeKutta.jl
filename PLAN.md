@@ -7,9 +7,9 @@ it says what changes, what must not change, and what must be measured
 and recorded. `CLAUDE.md` has the mechanics. Delete this file when the
 last step is marked *(Done.)*.
 
-**Steps 0–5 are done. Step 6's review is done, and awaits Erik's
-confirmation of the proposed decisions**; only then is step 6 marked
-done and this file deleted. The 0.1.0 tag of step 4 is Erik's, and waits
+**Steps 0–6 are done**, and the plan is complete. Erik decided the
+proposed decisions on 2026-09-24, all but step 5's fresh tasks, which
+wait on its Symmetry run. The 0.1.0 tag of step 4 is Erik's, and waits
 on his `LICENSE.md` and a green CI on the remote. Step 5's Symmetry run
 is Erik's too.
 
@@ -480,7 +480,7 @@ the state size, and nothing at one thread. The Mac numbers are in
 `CODE.md`; the Symmetry run, `bench/symmetry_stage_arithmetic.sh`, is
 Erik's.
 
-## Step 6 — Review pass
+## Step 6 — Review pass *(Done, 2026-09-24.)*
 
 Read every file against `CODE.md`.
 - Every **(proposed in step N)** is either confirmed with Erik or
@@ -491,3 +491,9 @@ Read every file against `CODE.md`.
 
 Then mark the last step *(Done.)* and delete this file, recording in
 `CODE.md`'s status line that the plan is complete.
+
+Outcome: the review found and fixed what is in its commits, and listed
+the (proposed) decisions. Erik decided them on 2026-09-24: test-only
+dependencies move to `test/Project.toml`; every other proposal is
+decided, except fresh sticky tasks, which stays proposed until the
+Symmetry run; and CI gains a fifth cell, Julia 1.10 at four threads.
