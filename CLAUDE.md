@@ -92,7 +92,8 @@ into steps 0–6; it is deleted once Erik has confirmed step 6. What exists:
   broadcast against by owner, with a persistent-worker prototype for
   comparison) and `bench/symmetry_stage_arithmetic.sh`, its SLURM job. The
   numbers are in `CODE.md`, "By owner, as built";
-- `.github/workflows/CI.yml` and `.github/dependabot.yml`;
+- `.github/workflows/CI.yml`, with five cells (`CODE.md`, "File
+  layout"), and `.github/dependabot.yml`;
 - `README.md`, with the CI badge, installation by URL, the worked example
   and the 0.1.0 status.
 

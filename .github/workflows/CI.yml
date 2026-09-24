@@ -32,7 +32,7 @@ jobs:
       fail-fast: false
       # One cell per axis, spelled out rather than a `version x os`
       # product: the floor version, the current release on Linux and on
-      # macOS/arm64, and threads.
+      # macOS/arm64, and threads, on the current release and on the floor.
       matrix:
         include:
           # Julia 1.10 is the floor (`julia = "1.10"` in `[compat]`). It is
@@ -58,6 +58,14 @@ jobs:
           # instrument this one: a coverage hit is an atomic increment on
           # one counter per line, and threads contend on it.
           - version: "1"
+            os: ubuntu-latest
+            threads: 4
+          # Threaded on the floor too: 1.10 places the default pool at
+          # thread ids 1-4 where 1.13 places it at 2-5, and it allocates
+          # more per task, so the owner path's placement and allocation
+          # tests see a different machine there ("By owner, as built" in
+          # CODE.md).
+          - version: "1.10"
             os: ubuntu-latest
             threads: 4
     steps:

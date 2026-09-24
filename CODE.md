@@ -1090,12 +1090,19 @@ touch, pinned and interleaved, and unpinned.
   dependencies are Metal, Test and this package, developed from `../..`.
   `runtests.jl` does not include it. See
   [On a device](#on-a-device-measured-in-step-4).
-- `.github/workflows/CI.yml` (proposed in step 0) has four cells: Julia
-  1.10 on Linux; the current release on Linux, with
-  `--check-bounds=yes` and coverage; the current release on macOS; and
-  the current release on Linux at four threads. Every cell but the
-  bounds-checked one runs with `--check-bounds=auto`, so that the
-  allocation tests run on the floor and at four threads.
+- `.github/workflows/CI.yml` (proposed in step 0) has five cells
+  (amended in step 6: Erik added the fifth):
+  - Julia 1.10 on Linux, at one thread;
+  - the current release on Linux, with `--check-bounds=yes` and
+    coverage;
+  - the current release on macOS;
+  - the current release on Linux at four threads;
+  - Julia 1.10 on Linux at four threads, where the owner path's
+    placement and allocations differ from the current release's
+    ([By owner, as built](#by-owner-as-built-measured-in-step-5)).
+
+  Every cell but the bounds-checked one runs with `--check-bounds=auto`,
+  so that the allocation tests run on the floor and at four threads.
   `julia-runtest`'s default, `yes`, would skip them in every cell.
   There is no Metal cell (proposed in step 4): GitHub's hosted macOS
   arm64 runners are virtual machines without Metal support. A push to
