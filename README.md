@@ -79,6 +79,9 @@ limiters, for all seven named tableaus (`IMEXSSP222`, `IMEXSSP2322`,
 `IMEXSSP2332`, `IMEXSSP3332`, `IMEXSSP3433`, `ARS222`, `ARS443`) and a
 caller's own `IMEXTableau`. `step!` is type-stable and allocation-free.
 The tableaus' order, stiff accuracy, L-stability and SSP coefficient are
-computed, tested, and recorded in `CODE.md`. `PLAN.md` breaks the rest
-into steps: the validation next, then a 0.1.0 release, then the by-owner
-stage arithmetic for threaded CPU arrays.
+computed, tested, and recorded in `CODE.md`. So is the validation: the
+observed orders, the order in the stiff limit (SSP3(4,3,3) drops from 3
+to 2 there), where a step lands as `ε → 0`, total variation under upwind
+advection, and agreement with OrdinaryDiffEqSDIRK to round-off. `PLAN.md`
+breaks the rest into steps: a Metal smoke test and a 0.1.0 release next,
+then the by-owner stage arithmetic for threaded CPU arrays.

@@ -7,7 +7,7 @@ it says what changes, what must not change, and what must be measured
 and recorded. `CLAUDE.md` has the mechanics. Delete this file when the
 last step is marked *(Done.)*.
 
-**Steps 0–2 are done. Step 3 is next.**
+**Steps 0–3 are done. Step 4 is next.**
 
 Each step ends in a green suite and a `CODE.md` update, and each is a
 brief that a single session can carry. The steps are in dependency
@@ -135,7 +135,8 @@ This is TreeGRRMHD's pattern.
     implicitly** and `f2` explicitly: the opposite order from
     `IMEXProblem(f_exp!, solve_imp!, …)`.
   - Upstream's explicit part must not depend on `t` until #4620 is
-    fixed.
+    fixed, for the tableaus with `c̃_s ≠ 1`, SSP3(3,3,2) and SSP3(4,3,3).
+    Where `c̃_s = 1` the comparison passes (measured in step 3).
   - Upstream's state must be real.
   - Upstream's SSP3(4,3,3) uses the 14-digit coefficients, which differ
     from the closed form by about 1e−15.
@@ -319,7 +320,7 @@ Accept:
 - `CLAUDE.md` says TreeGRRMHD's step 5 may start. It adds the package
   by URL.
 
-## Step 3 — Validation (TreeGRRMHD 4c)
+## Step 3 — Validation (TreeGRRMHD 4c) *(Done, 2026-09-24.)*
 
 `CODE.md`: "Testing" (Order, Stiff limit, Asymptotic preservation, SSP,
 Oracle), "Why not an existing package" (the oracle restrictions).

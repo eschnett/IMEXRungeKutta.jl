@@ -35,8 +35,8 @@ Rules that follow from `CODE.md` and govern every change:
 
 ## Current state
 
-**Steps 0–2 done: scaffolding, the tableaus, and the integrator on the
-broadcast path** (2026-09-24). `CODE.md` records the requirements, the
+**Steps 0–3 done: scaffolding, the tableaus, the integrator on the
+broadcast path, and the validation** (2026-09-24). `CODE.md` records the requirements, the
 method, the survey of OrdinaryDiffEq and ClimaTimeSteppers, the package
 design, the test plan and the open questions. Two questions are still
 open: where a TreeAMR state vector's ownership partition comes from, and
@@ -44,7 +44,8 @@ whether SSP2(3,3,2)'s coefficients, recalled by the step-1 reviewer rather
 than transcribed, match Pareschi & Russo (2005). `PLAN.md` splits the work
 into steps 0–6. What exists:
 - `Project.toml` with CommonSolve as the one run-time dependency, and
-  Test, LinearAlgebra and TOML as test-only extras;
+  Test, LinearAlgebra, TOML and OrdinaryDiffEqSDIRK (compat `2.9.6`, the
+  oracle) as test-only extras;
 - `src/IMEXRungeKutta.jl`, the module, which re-exports CommonSolve's
   `init`, `solve`, `solve!` and `step!` and exports `IMEXProblem`,
   `IMEXTableau` and the seven named tableaus;
@@ -66,6 +67,11 @@ into steps 0–6. What exists:
   `test/mocks.jl` (logging mock callbacks), `test/interface_tests.jl`,
   `test/mechanics_tests.jl`, `test/smoke_order_tests.jl` and
   `test/readme_tests.jl` (which runs the README's example);
+- the validation of step 3: `test/problems.jl` (test-only helpers: the
+  fitted order and the Kaps problem), `test/order_tests.jl`,
+  `test/stiff_tests.jl` (Kaps), `test/ap_tests.jl` (the stiff limit),
+  `test/ssp_tests.jl` (total variation) and `test/oracle_tests.jl`
+  (OrdinaryDiffEqSDIRK); the numbers are in `CODE.md`, "Validation";
 - `.github/workflows/CI.yml` and `.github/dependabot.yml`, which run once
   there is a remote;
 - `README.md`, with the worked example.
@@ -76,12 +82,13 @@ the URL is this repository's local path,
 `Pkg.add(url = "/Users/eschnett/src/jl/IMEXRungeKutta")`, which tracks
 `main`.
 
-Step 3, the validation, is next. Upstream's `ARS443` differs from ours,
-which is the paper's, in `b̃` ("Cross-checks"); step 3's oracle test must
-allow for it. SSP2(3,3,2) has no oracle. In the stiff limit, SSP3(4,3,3)
-ends each step `O(Δt)` off the equilibrium, as its implicit part is not
-stiffly accurate ("Where a step ends in the stiff limit" in `CODE.md`);
-step 3's asymptotic-preservation test should expect that, not `O(ε)`.
+**TreeGRRMHD's 4c is this step 3.** SSP3(4,3,3) is L-stable (computed
+in step 1), drops from order 3 to 2 in the stiff limit, in the stiff
+component, and ends each step `Δt (1 − bᵀA⁻¹c̃) f = −0.2844 Δt f` off the
+equilibrium, which does not accumulate; at a jump of the equilibrium that
+is an overshoot of `0.2844 C` ("Validation" in `CODE.md`).
+
+Step 4, the Metal smoke test and the 0.1.0 release, is next.
 
 ## Commands
 
@@ -117,6 +124,25 @@ julia +1.10 --project=. --threads=4 -e 'using Pkg; Pkg.test(julia_args=["--check
 `Pkg.test()` passes the parent's `--threads` on to the test process on
 both versions (measured in step 0). The suite prints the thread count and
 `CHECK_BOUNDS_FORCED` as it starts: check them.
+
+**The test environment is large** since step 3 added OrdinaryDiffEqSDIRK
+as the oracle: 142 packages on 1.13, 138 on 1.10. Measured on the M3
+(step 3), from a fresh `JULIA_DEPOT_PATH`, so including the downloads:
+- 1.13.0: 238 s in all. `Pkg.instantiate()` of the package itself, with
+  the registry, 49 s; then `Pkg.test()` 189 s, of which resolving and
+  downloading the test environment about 10 s, precompiling its 156
+  packages 116 s, and the suite 64 s.
+- 1.10.12, `julia_args=["--check-bounds=auto"]`: 169 s in all.
+  Instantiate 7 s; then `Pkg.test()` 162 s, of which about 5 s resolve and
+  download, 110 s precompiling 153 packages, and the suite 47 s.
+- With the depot warm and only `Manifest.toml` deleted, `Pkg.test()`
+  takes the suite time plus 5–10 s. A `--check-bounds=yes` run
+  precompiles the whole environment again for that flag the first time:
+  267 s on 1.13 and 331 s on 1.10, of which the suite is 99 s and 129 s.
+- The suite alone, at one thread: 64 s on 1.13 and 44–57 s on 1.10, of
+  which `oracle_tests.jl` is 38–42 s and 28 s, almost all of it compiling
+  upstream's six solvers. Under load (a load average of 14) the 1.13
+  suite took 98 s. Every other file is under 11 s.
 
 `Manifest.toml` is untracked and shared between Julia versions. `Pkg.test`
 re-resolves a manifest written by the other version by itself, but a
@@ -180,5 +206,8 @@ EntropyEOS):
   - ClimaTimeSteppers: `src/solvers/imex_ssprk.jl`, `imex_ark.jl` and
     `imex_tableaus.jl` in CliMA/ClimaTimeSteppers.jl.
 - OrdinaryDiffEqSDIRK #4620 (the mistimed last explicit stage) was open
-  on 2026-09-24. Until it is fixed, oracle comparisons must use an
-  explicit part that does not depend on `t`.
+  on 2026-09-24. Until it is fixed, oracle comparisons of the tableaus
+  with `c̃_s ≠ 1`, SSP3(3,3,2) and SSP3(4,3,3), must use an explicit part
+  that does not depend on `t`; `test/oracle_tests.jl` marks theirs
+  `@test_broken`. A fix upstream makes them unexpected passes, which fail
+  the suite: then turn them into plain `@test`s.

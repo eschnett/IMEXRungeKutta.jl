@@ -8,9 +8,10 @@ item is marked **(decided)**, **(proposed)** or **(open)**.
 **Status (2026-09-24):** the [package design](#package-design) is
 complete, except where the partition for TreeAMR state vectors comes
 from (open). SSP2(3,3,2)'s coefficients are still to be checked against
-the paper (open). The implementation plan is `PLAN.md`. Steps 0–2, the
-scaffolding, the tableaus and the integrator on the broadcast path, are
-done; step 3, the validation, is next.
+the paper (open). The implementation plan is `PLAN.md`. Steps 0–3, the
+scaffolding, the tableaus, the integrator on the broadcast path and the
+validation, are done ([Validation](#validation-measured-in-step-3));
+step 4, the Metal smoke test and v0.1.0, is next.
 
 ## Purpose
 
@@ -82,7 +83,9 @@ existed:
   2026-09-24; this was "at most StaticArrays", with SciMLBase open). See
   [Dependencies and names](#dependencies-and-names-decided). It brings
   PrecompileTools and Preferences with it (measured in step 0). Heavier
-  packages (OrdinaryDiffEqSDIRK) are test-only.
+  packages (OrdinaryDiffEqSDIRK) are test-only. With it, the test
+  environment has 142 packages on Julia 1.13 and 138 on 1.10, standard
+  libraries included (measured in step 3).
 
 ## The method
 
@@ -150,7 +153,12 @@ So every tableau here has a closed form. **(decided):**
 SSP3(4,3,3) is **not** stiffly accurate: `b = (0, 1/6, 1/6, 2/3)`, while
 the last row of `A` is `(β, η, 1/2 − β − η − α, α)`. So its order may
 drop in the stiff limit, and the ARS schemes, which are stiffly accurate,
-are the alternative if that matters. Its parameters are exactly those
+are the alternative if that matters. It does drop, **from 3 to 2**, in
+the stiff component (measured in step 3): on the Kaps problem at
+`ε = 10⁻⁶` and `10⁻⁹` the observed order is 1.989 and 1.988 in `y₁`,
+while the non-stiff `y₂` keeps 3.010 and 3.011. ARS(4,4,3) keeps 3.017
+and 3.012 ([The stiff limit](#the-stiff-limit)). Its parameters are
+exactly those
 that make `R(∞) = 0` (above). Its implicit part is also A-stable, and so
 L-stable. That is computed, not quoted (measured in step 1): all three
 nonzero coefficients of its E-polynomial are positive (below).
@@ -175,7 +183,31 @@ this is `Δt (1 − bᵀA⁻¹c̃) f` to leading order.
 - The displacement does not accumulate, since every step starts by
   relaxing again.
 
-Step 3's asymptotic-preservation test measures this per tableau.
+Step 3 measured this per tableau, and found the second item incomplete
+(amended in step 3; [Asymptotic preservation](#asymptotic-preservation)):
+- **The general form.** With `S` the solving stages (all of them for
+  IMEX-SSP, stages 2–s for ARS), `b_SᵀA_SS⁻¹𝟙 = 1` for all seven, and the
+  update is `ū + Δt wᵀF` with `w = b̃ − Ã_{S,:}ᵀA_SS⁻ᵀb_S`. For an `f` of
+  `t` alone that is `Δt (wᵀ𝟙) f + Δt² (wᵀc̃) f′ + …`, and
+  `wᵀ𝟙 = 1 − bᵀA⁻¹c̃`. Every step of every tableau lands on it, to at most
+  5.83ε at `ε = 10⁻¹²`, whatever `Δt`.
+- **`wᵀ𝟙 = 0` is not `w = 0`.** For SSP2(3,2,2) and SSP2(3,3,2) the
+  implicit part is stiffly accurate but the explicit part is not, so
+  `w = b̃ − ã_s ≠ 0`, with `wᵀc̃ = 1/2` and `1/4`. With an `f` that depends
+  on `t`, they land `Δt² (wᵀc̃) f′` off the equilibrium, not `O(ε)`: from
+  `t = 1` with `f = cos t` and `Δt = 0.025`, `−2.65e−4` and `−1.33e−4`,
+  that is 0.504 and 0.252 times `−Δt² sin 1`. With a constant `f` they
+  land on `ū + ε f` to within 2ε.
+- **Only the ARS schemes have `w = 0`**, both parts being stiffly
+  accurate, and land on the equilibrium to `O(ε)` whatever `f` is.
+- **SSP3(4,3,3)'s coefficient is `wᵀ𝟙` = −0.28436465** (256 bits,
+  rounded), exactly what a constant `f` gives, `d/Δt = −0.28436465`; for
+  SSP2(2,2,2) and SSP3(3,3,2) it is `−1/√2`.
+- **No accumulation, measured.** After 100 steps of `Δt = 0.01`, the
+  displacement at `t = 1` is the last step's limit displacement to 5.1ε
+  at `ε = 10⁻¹²`, for every tableau. At the README's `ε = 10⁻⁶` it is the
+  displacement of one step from the quasi-steady state at `t = 0.99` to
+  within 6.8e−4 relative.
 
 **Measured properties** (measured in step 1). These are computed by
 `test/tableau_properties.jl` and asserted by `test/tableau_tests.jl`:
@@ -236,7 +268,11 @@ SSP2(3,3,2) the three-stage second-order SSPRK(3,2), with coefficient 2.
 Each is the optimal value for its stages and order. The ARS explicit parts have negative coefficients, and so
 coefficient 0: `δ = −1/√2` in ARS(2,2,2), and `ã₄₂ = −5/6` and
 `ã₅₄ = b̃₄ = −7/4` in ARS(4,4,3).
-Step 3 measures what that means for TVD advection.
+Step 3 measured what that means for TVD advection
+([SSP and total variation](#ssp-and-total-variation)): on linear upwind
+advection only the stability polynomial matters, so ARS(2,2,2) keeps the
+threshold 1 of every two-stage second-order method, while ARS(4,4,3),
+whose polynomial has the `z⁴` coefficient `−7/288`, has none.
 
 **What the order conditions do not see** (measured in step 1). The
 order conditions are the independent check of every transcription. A
@@ -272,6 +308,15 @@ reading only, with OrdinaryDiffEqSDIRK 2.9.6
   - They are not yet checked against the paper, which is not available
     here (open; see [Open questions](#open-questions)).
   - It has no oracle.
+  - Step 3 adds evidence, not a confirmation (measured in step 3): the
+    observed order is 2.003 on `u′ = iu − u` and 2.001 on
+    `u′ = −u + cos t`; on the Kaps problem it is second order at every
+    `ε`; the measured TVD threshold without relaxation is 2.0000, its SSP
+    coefficient; and in the stiff limit it lands where a stiffly accurate
+    implicit part must (`wᵀ𝟙 = 0`, `wᵀc̃ = 1/4`, in
+    [Asymptotic preservation](#asymptotic-preservation)). These test the
+    integrated scheme, where the order conditions test the coefficients;
+    neither is a comparison with the paper.
 - SSP3(4,3,3) (`SSP433`) agrees with both, up to their 14-digit
   `α, β, η`, which are the closed form rounded (a test).
 - **ARS(4,4,3) disagrees in `b̃`.**
@@ -294,6 +339,17 @@ reading only, with OrdinaryDiffEqSDIRK 2.9.6
   - Step 3's oracle comparison of ARS(4,4,3) must therefore compare with
     `IMEXTableau("…", Ã, b, A, b)`, built from `ARS443()`'s parts, not
     with `ARS443()`.
+  - What the difference amounts to (measured in step 3). On the oracle's
+    linear problem the two differ by 1.95e−5 in one step of `Δt = 0.1`
+    and by 5.2e−10 at `Δt = 0.00625`, `O(Δt⁴)` per step (local slopes
+    3.59, 3.78, 3.89, 3.94), and by 2.5e−5 over ten steps of `Δt = 0.1`.
+    In the stiff limit the difference is qualitative: upstream's explicit
+    part is not stiffly accurate, so its step lands `O(Δt⁴)` off the
+    equilibrium. On the Kaps problem at `ε = 10⁻¹²`, one step of
+    `Δt = 0.1` leaves `y₁ − y₂² = 6.46e−5` with upstream's `b̃`, and
+    4.2e−14 (0.04ε) with the paper's. A reviewer's reproducer, on a
+    problem not recorded here, measured −2.3e−5 against 1.6e−8 at
+    `Δt = 0.1`, `ε = 10⁻¹⁰`.
 
 ### One step (decided)
 
@@ -779,11 +835,16 @@ one `broadcast!` each; step 5 adds methods (proposed in step 2).
   log their calls into buffers preallocated in `p`; `interface_tests.jl`,
   `mechanics_tests.jl` and `smoke_order_tests.jl` follow `PLAN.md`'s step
   2; and `readme_tests.jl` evaluates the README's `julia` blocks and
-  checks their result (amended in step 2).
+  checks their result (amended in step 2). Step 3 adds `order_tests.jl`,
+  `stiff_tests.jl`, `ap_tests.jl`, `ssp_tests.jl` and `oracle_tests.jl`,
+  one per validation group of [Testing](#testing-decided), and
+  `problems.jl`, the helpers they share (amended in step 3).
 - Test-only dependencies are `[extras]` and `[targets]` in the root
   `Project.toml`, not a `test/Project.toml` (proposed in step 0). That
   is what `PLAN.md` specifies, and it keeps one file to read for the
-  whole dependency picture. TOML is among them, for the `[deps]` check.
+  whole dependency picture. TOML is among them, for the `[deps]` check,
+  and OrdinaryDiffEqSDIRK, for the oracle, with a `[compat]` bound
+  (amended in step 3; [The oracle](#the-oracle)).
 - `.github/workflows/CI.yml` (proposed in step 0) has four cells: Julia
   1.10 on Linux; the current release on Linux, with
   `--check-bounds=yes` and coverage; the current release on macOS; and
@@ -842,11 +903,16 @@ limiter, one call per stage) would rest on behaviour upstream does not
 promise. Revisit if upstream gains a user stage-solver hook.
 
 **Use as a test oracle** (decided). Upstream agrees with a direct
-reference step to 1e−16 on a linear problem with default settings. Two
+reference step to 1e−16 on a linear problem with default settings. These
 restrictions apply:
 - the state must be real (its default AD Jacobian rejects a complex
   state);
-- `f` must not depend on `t`, until #4620 is fixed;
+- `f` must not depend on `t`, until #4620 is fixed. That holds only for
+  the tableaus whose last explicit abscissa `c̃_s` is not 1, SSP3(3,3,2)
+  and SSP3(4,3,3) (`c̃_s = 1/2`), since upstream's `t + Δt` is right where
+  `c̃_s = 1` (amended in step 3). With a `t`-dependent `f`, the other four
+  agree with upstream to 3.1e−16 over ten steps, and those two differ by
+  0.0225;
 - its `ARS443` has `b̃ = b`, where this package has the last row of `Ã`
   (amended in step 1; see "Cross-checks" under [Tableaus](#tableaus)). So
   the comparison for ARS(4,4,3) is against a tableau built with upstream's
@@ -854,7 +920,10 @@ restrictions apply:
 - SSP2(3,3,2) is in neither upstream, so it has no oracle (amended in
   step 1). Its coefficients, recalled by the step-1 reviewer, rest on the
   order conditions, `R(∞) = 0` and the SSP coefficient alone, until they
-  are checked against the paper (open).
+  are checked against the paper (open). Step 3's measurements are further
+  evidence ("Cross-checks").
+
+The oracle comparisons are in [The oracle](#the-oracle).
 
 ### ClimaTimeSteppers (1.0.1)
 
@@ -947,12 +1016,199 @@ failure mode it guards.
   the observed order per `ε` is recorded, including any order reduction.
 - **Asymptotic preservation:** at `ε = 1e−12`, one step lands on the
   equilibrium manifold to `O(ε)`.
+  - That holds only for the ARS schemes, and for SSP2(3,2,2) and
+    SSP2(3,3,2) only when `f` does not depend on `t` (amended in step 3).
+    For the others the claim is where the step lands: `ū + Δt wᵀF`, to
+    `O(ε)`, with `w` as in "Where a step ends in the stiff limit". The
+    test asserts `O(ε)` where `w = 0`, the displacement and its
+    coefficient `wᵀ𝟙 = 1 − bᵀA⁻¹c̃` for the three with `wᵀ𝟙 ≠ 0`, and
+    `wᵀc̃` for the two with only `wᵀ𝟙 = 0`; that the displacement does
+    not accumulate over 100 steps; and, on the Kaps problem, the residual
+    `y₁ − y₂²` of one step and its order in `Δt`.
 - **SSP:** upwind advection with stiff relaxation keeps the total
   variation non-increasing for `Δt ≤ C Δt_FE`; the measured `C` is
   recorded against the explicit part's SSP coefficient.
+  - The relaxation is toward the initial square wave itself, and the
+    property asked of a step is `TV(uⁿ⁺¹) ≤ max(TV(uⁿ), TV(φ))`, which
+    the exact solution has; without relaxation it is `TV(uⁿ⁺¹) ≤ TV(uⁿ)`.
+    `C` is measured without relaxation, at `ε = 10⁻²` and at
+    `ε = 10⁻¹²` (amended in step 3; [SSP and total
+    variation](#ssp-and-total-variation)).
 - **Oracle:** each tableau OrdinaryDiffEqSDIRK has matches it to 1e−12
   over ten steps, within the restrictions above. That is all but
   SSP2(3,3,2) (amended in step 1).
+  - Also (amended in step 3): with a `t`-dependent `f`, it matches
+    where `c̃_s = 1` and is `@test_broken` where not (#4620); the
+    14-digit SSP3(4,3,3) is compared on its own; and our ARS(4,4,3)
+    differs from upstream's by `O(Δt⁴)` per step.
+
+## Validation (measured in step 3)
+
+The numbers of step 3's validation files, measured on an Apple M3 with
+Julia 1.13.0 and identical on 1.10.12. Each is asserted by its test, to
+the tolerance given, so that a regression is caught.
+
+**How the tests measure** (proposed in step 3):
+- an observed order is the least-squares slope of `log error` against
+  `log Δt` over three step sizes (`fitted_order`, in `test/problems.jl`);
+- a test asserts both the theory (the stated order, `O(ε)`, a formula)
+  and the measured number, which is recorded here;
+- the problems the stiff and the AP tests share, the Kaps problem with its
+  split and its closed-form stage solve, are in `test/problems.jl`, beside
+  `tableau_properties.jl` and `mocks.jl`.
+
+### Observed orders
+
+`test/order_tests.jl`. Both problems have the implicit part `−u` and run
+to `t = 1`, with `Δt = 1/10, …, 1/160`; the fit uses the finest three,
+`1/40, 1/80, 1/160`. Each is asserted within 0.1 of the stated order, and
+within 0.005 of the number here.
+
+| | stated | `u′ = iu − u` (complex) | `u′ = −u + cos t` |
+|---|---|---|---|
+| SSP2(2,2,2) | 2 | 2.004 | 2.002 |
+| SSP2(3,2,2) | 2 | 2.008 | 2.029 |
+| SSP2(3,3,2) | 2 | 2.003 | 2.001 |
+| SSP3(3,3,2) | 2 | 1.994 | 1.993 |
+| SSP3(4,3,3) | 3 | 3.007 | 3.006 |
+| ARS(2,2,2) | 2 | 2.004 | 2.009 |
+| ARS(4,4,3) | 3 | 3.005 | 3.001 |
+
+### The stiff limit
+
+`test/stiff_tests.jl`: the Kaps problem, split as `PLAN.md` says, from
+`y(0) = (1, 1)` to `t = 1`. The error is the largest over the steps and
+over both components; the order is fitted over `Δt = 1/40, 1/80, 1/160`.
+Each number is asserted to ±0.15.
+
+| | stated | `ε = 1` | `ε = 10⁻³` | `ε = 10⁻⁶` | `ε = 10⁻⁹` |
+|---|---|---|---|---|---|
+| SSP2(2,2,2) | 2 | 2.025 | 2.225 | 2.003 | 2.002 |
+| SSP2(3,2,2) | 2 | 2.023 | 2.149 | 2.004 | 2.004 |
+| SSP2(3,3,2) | 2 | 2.016 | 2.117 | 1.998 | 1.998 |
+| SSP3(3,3,2) | 2 | 3.025 | 3.386 | 2.997 | 2.996 |
+| SSP3(4,3,3) | 3 | 3.026 | 2.511 | **1.989** | **1.988** |
+| ARS(2,2,2) | 2 | 2.020 | 2.003 | 2.010 | 2.010 |
+| ARS(4,4,3) | 3 | 3.019 | 1.493 | 3.017 | 3.012 |
+
+- **SSP3(4,3,3) drops to order 2 in the stiff limit**, in the stiff
+  component: `y₂` alone keeps 3.010 and 3.011 at `ε = 10⁻⁶` and `10⁻⁹`
+  (asserted to ±0.05). Not stiff, at `ε = 1`, it is third order.
+- **SSP3(3,3,2) shows order 3**, above its stated 2, at every `ε` but
+  `10⁻³`. The Kaps problem cannot see its failing order-3 condition: its
+  exact solution lies on `y₁ = y₂²`, where `g = 0`, so every elementary
+  differential with `g` at a leaf vanishes. The order tests, which can,
+  give 1.994 and 1.993.
+- **At `ε = 10⁻³`**, `Δt/ε` runs from 25 to 6, between the regimes, and
+  the slope is not an asymptotic order. Over `Δt = 1/10, …, 1/640` the
+  local slopes of ARS(4,4,3) run from 0.7 to 2.3, and SSP3(3,3,2)'s from
+  1.75 to 5.0. The numbers are regression values.
+- ARS(4,4,3), stiffly accurate in both parts, keeps order 3 in the stiff
+  limit; ARS(2,2,2) and the three second-order SSP schemes keep 2.
+
+### Asymptotic preservation
+
+`test/ap_tests.jl`, at `ε = 10⁻¹²`. Two problems:
+- **Relaxation**, `u′ = f(t) − (u − ū)/ε`, from `u = ū`. Every step of
+  every tableau lands on `ū + Δt wᵀF` to at most 5.83ε (SSP2(2,2,2) and
+  SSP3(3,3,2) with `f = 1`; at most 3.15ε with `f = cos t`), with `w`
+  from "Where a step ends in the stiff limit"; asserted to 10ε. With `f = 1`
+  the displacement is `Δt wᵀ𝟙`, with `f = cos t` from `t = 1` its leading
+  term is `Δt (wᵀ𝟙) cos 1`, or `−Δt² (wᵀc̃) sin 1` where `wᵀ𝟙 = 0`.
+- **Kaps**, from `y(0) = (1, 1)`, the residual `r = y₁ − y₂²` after one
+  step. The manifold is invariant under the explicit part
+  (`f₁ − 2y₂f₂ = 0` on it), so the `O(Δt)` term of the relaxation
+  vanishes here, and the residual is higher order.
+
+| | `wᵀ𝟙` | `wᵀc̃` | `f = 1`: `d/Δt` | `f = cos t`: `d/(Δt² (−sin 1))`, `Δt = 0.025` | Kaps `r`, `Δt = 0.1` | Kaps `r`, order in `Δt` |
+|---|---|---|---|---|---|---|
+| SSP2(2,2,2) | −1/√2 | — | −0.70710678 | — | 1.7046e−2 | 1.999 |
+| SSP2(3,2,2) | 0 | 1/2 | 2.0ε/Δt | 0.50396 | 9.9750e−3 | 1.999 |
+| SSP2(3,3,2) | 0 | 1/4 | 1.0ε/Δt | 0.25231 | 4.7483e−3 | 1.979 |
+| SSP3(3,3,2) | −1/√2 | — | −0.70710678 | — | 5.5907e−4 | 2.993 |
+| SSP3(4,3,3) | −0.28436465 | — | −0.28436465 | — | −7.1610e−3 | 1.962 |
+| ARS(2,2,2) | 0 (`w = 0`) | 0 | 1.0ε/Δt | 0 | 9.4e−14 (0.094ε) | — |
+| ARS(4,4,3) | 0 (`w = 0`) | 0 | 1.0ε/Δt | 0 | 4.2e−14 (0.042ε) | — |
+| ARS(4,4,3), upstream's `b̃` | — | — | — | — | 6.4568e−5 | 3.974 |
+
+- The Kaps residuals are asserted to 1% and their orders, over
+  `Δt = 0.1, 0.05, 0.025, 0.0125`, to ±0.15 of 2, 2, 2, 3, 2 and 4. For
+  ARS the residual is asserted below ε at every `Δt`.
+- **Over many steps nothing accumulates.** For the relaxation, see "Where
+  a step ends in the stiff limit". For Kaps, after 10 steps of `Δt = 0.1`
+  or 100 of `Δt = 0.01`, the residual at `t = 1` is that of one step from
+  the exact solution at `1 − Δt`, to within 0.32%; it decays with the
+  solution, `∝ e^{−2t}`. For ARS it stays below ε.
+
+### SSP and total variation
+
+`test/ssp_tests.jl`: `u_t + u_x = −(u − φ)/ε` on the periodic `[0, 1)`,
+100 cells, first-order upwind explicit and the relaxation implicit, from
+`u⁰ = φ`, a square wave with `TV = 2`. `C = Δt/Δt_FE`, with
+`Δt_FE = Δx`, is the largest value at which 50 steps keep
+`TV(uⁿ⁺¹) ≤ max(TV(uⁿ), TV(φ))` to a relative 1e−12 (without relaxation,
+`TV(uⁿ⁺¹) ≤ TV(uⁿ)`), by bisection on `[0, 4]` to 1e−4 (proposed in step
+3). `C` is asserted to 1e−3.
+
+| | SSP coefficient (step 1) | `C`, no relaxation | `C`, `ε = 10⁻²` | `C`, `ε = 10⁻¹²` | stiff limit: TV rise in step 1 |
+|---|---|---|---|---|---|
+| SSP2(2,2,2) | 1 | 1.0000 | 0.7158 | 0 | `4κC`, `κ = 1/√2` |
+| SSP2(3,2,2) | 1 | 1.0000 | 0.7088 | 1.0024 | `8(C − 1)ε/Δx` for `C > 1` |
+| SSP2(3,3,2) | 2 | 2.0000 | 1.4709 | ≥ 4 | 0 |
+| SSP3(3,3,2) | 1 | 1.0000 | 0.8613 | 0 | `4κC`, `κ = 1/√2` |
+| SSP3(4,3,3) | 1 | 1.0000 | 0.6840 | 0 | `4κC`, `κ = 0.28436465` |
+| ARS(2,2,2) | 0 | 1.0000 | 0.7286 | ≥ 4 | 0 |
+| ARS(4,4,3) | 0 | 0.0021 | 0.0021 | ≥ 4 | 0 |
+
+- **Without relaxation** `C` is the linear threshold of the explicit
+  stability polynomial, and equals the SSP coefficient for the five
+  IMEX-SSP schemes. ARS(2,2,2)'s polynomial is `1 + z + z²/2`, threshold
+  1, although its SSP coefficient is 0. ARS(4,4,3)'s has the `z⁴`
+  coefficient `−7/288`, so no positive threshold; its 0.0021 is where the
+  `O(C⁴)` rise falls below the tolerance, and `C = 0.01` fails (a test).
+- **With relaxation as fast as the advection** (`ε = 10⁻²`, `Δt/ε = C`),
+  every `C` is below the explicit threshold.
+- **In the stiff limit** the non-stiffly-accurate three have `C = 0`: each
+  step ends `Δt wᵀF` off `φ`, an overshoot of `κC` (`κ = −wᵀ𝟙`) on each
+  side of both jumps, so the first step raises the total variation by
+  exactly `4κC` (asserted to 1e−6 relative, at `C = 0.5, 1, 2, 4`). For
+  SSP3(4,3,3) at `C = 1` that is 1.137 on a total variation of 2, with
+  the solution reaching 1.284 and −0.284. The four with a stiffly accurate
+  implicit part end on `φ` to `O(ε)`: SSP2(3,2,2)'s rise, `8(C − 1)ε/Δx`,
+  is 2.4e−9 at `C = 4` (asserted below 10⁴ε), and puts its bisected `C`
+  at 1.0024 for `ε = 10⁻¹²` but 3.4999 for `ε = 10⁻¹⁵`. The other three
+  stay at `TV(u⁰)` to round-off up to `C = 4`.
+
+This is the stiff-limit displacement of
+[Asymptotic preservation](#asymptotic-preservation) seen at a
+discontinuity: where the equilibrium is not a steady state of the
+explicit part, SSP2(2,2,2), SSP3(3,3,2) and SSP3(4,3,3) put an `O(1)`
+overshoot, `κ Δt |f|` with `|f| ~ jump/Δx`, next to each jump of it.
+
+### The oracle
+
+`test/oracle_tests.jl`: `SplitODEProblem(g, f, …)` with upstream's
+defaults, ten steps of `Δt = 0.1` of `u′ = Lu + Mu + a cos(3t) v` on three
+real components, `Lu` implicit. Upstream is OrdinaryDiffEqSDIRK 2.9.6.
+
+| | `c̃_s` | `a = 0` | `a = 1` |
+|---|---|---|---|
+| SSP2(2,2,2) | 1 | 5.6e−17 | 1.4e−16 |
+| SSP2(3,2,2) | 1 | 2.5e−16 | 2.6e−16 |
+| SSP3(3,3,2) | 1/2 | 1.4e−16 | 0.0225 (#4620, `@test_broken`) |
+| SSP3(4,3,3) | 1/2 | 5.3e−16 | 0.0225 (#4620, `@test_broken`) |
+| ARS(2,2,2) | 1 | 2.8e−17 | 1.4e−16 |
+| ARS(4,4,3), upstream's `b̃` | 1 | 8.3e−17 | 3.1e−16 |
+
+- The 1e−12 tolerance absorbs upstream's 14-digit SSP3(4,3,3): ten steps
+  with the printed digits, held exactly as decimals, differ from the
+  closed form by 4.9e−16, and from upstream by 1.9e−16.
+- Our own ARS(4,4,3), the paper's, differs from upstream's by 2.5e−5 over
+  the ten steps ("Cross-checks").
+- The test environment adds OrdinaryDiffEqSDIRK with the compat bound
+  `"2.9.6"`, that is `[2.9.6, 3)` (proposed in step 3). A release that
+  fixes #4620 turns the two `@test_broken` into unexpected passes, which
+  fail the suite, and so is noticed.
 
 ## Open questions
 
@@ -963,7 +1219,10 @@ For the package design:
 - Confirm SSP2(3,3,2) against Pareschi & Russo (2005) (open, added in
   step 1). Its coefficients are the step-1 reviewer's recollection of the
   paper, verified only by the order conditions, `R(∞) = 0` and the SSP
-  coefficient. See "Cross-checks" under [Tableaus](#tableaus).
+  coefficient. See "Cross-checks" under [Tableaus](#tableaus). Step 3's
+  observed orders, stiff-limit behaviour and TVD threshold agree with
+  them, which is evidence, not the check against the paper (amended in
+  step 3).
 
 Deferred:
 
