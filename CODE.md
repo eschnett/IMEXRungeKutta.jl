@@ -14,14 +14,13 @@ broadcast path, the validation
 ([Validation](#validation-measured-in-step-3)), the Metal smoke run
 ([On a device](#on-a-device-measured-in-step-4)), the stage arithmetic by
 owner ([By owner, as built](#by-owner-as-built-measured-in-step-5)) and a
-review pass. Erik decided the steps' proposals on 2026-09-24, all but one.
+review pass. Erik decided the steps' proposals on 2026-09-24; the last
+one, fresh tasks rather than persistent workers, was decided by the
+Symmetry run, as he asked
+([By owner, as built](#by-owner-as-built-measured-in-step-5)).
 Open or pending:
 - where the partition for TreeAMR state vectors comes from (open;
   [Stage arithmetic](#stage-arithmetic-decided));
-- the Symmetry run of `bench/symmetry_stage_arithmetic.sh`, which is
-  Erik's, and the one decision still proposed, fresh tasks rather than
-  persistent workers, which waits on it
-  ([By owner, as built](#by-owner-as-built-measured-in-step-5));
 - the v0.1.0 tag, which is Erik's;
 - SciML/OrdinaryDiffEq.jl#4620 upstream, until whose fix two oracle
   comparisons are `@test_broken` ([The oracle](#the-oracle)).
@@ -915,7 +914,9 @@ runs there too.
 
 **Fresh tasks, not persistent workers** (proposed in step 5; Erik
 (2026-09-24): keep fresh tasks until the Symmetry run of
-`bench/symmetry_stage_arithmetic.sh` decides). Each
+`bench/symmetry_stage_arithmetic.sh` decides; decided by that run, job
+563504: persistent workers are no faster at any thread count, below).
+Each
 combination makes one fresh sticky task per thread, waits for all of them,
 and then rethrows the first error, unwrapped from its
 `TaskFailedException` to what the loop threw. `PLAN.md` asked for
@@ -941,8 +942,10 @@ TreeAMR's own passes (`threaded_chunks`, and `@threads :static` under
 KernelAbstractions' static schedule) launch fresh tasks the same way, so
 a TreeGRRMHD right-hand side already allocates per pass as this does per
 combination (read from TreeAMR's source, not measured here).
-This is the step-5 decision most worth a second look, with the Symmetry
-numbers at 64 threads.
+At 64 threads on Symmetry the persistent prototype is within 1% of the
+fresh tasks on a combination and on a launch; what fresh tasks cost is
+31 KB per combination and 239 KB per SSP3(4,3,3) step, against a step of
+10 ms on a 10⁸-byte state (measured 2026-09-24, below).
 
 **Forming `u★` writes `d_k` and `U` in one pass**, `lincomb_copy!`. So
 an SSP3(4,3,3) step is 9 combinations by owner, where the broadcast path
@@ -1047,9 +1050,46 @@ average 7.4–9.6 from other work), and the two runs differ by up to 19%.
   the last column of the bench output (1040 at 2 threads to 5920 at 12,
   per combination).
 
-**Symmetry** (pending a Symmetry run). `bench/symmetry_stage_arithmetic.sh`
-runs the same sweep on one AMD node at 1–64 threads: pinned with first
-touch, pinned and interleaved, and unpinned.
+**Symmetry** (measured 2026-09-24, job 563504 on `cn085`).
+`bench/symmetry_stage_arithmetic.sh` ran the same sweep on one AMD node
+at 1–64 threads, on a 10⁸-byte `Float64` state, Julia 1.13.0: pinned with
+first touch, pinned and interleaved, and unpinned. The node is a
+dual-socket **EPYC 7532** (Rome, 2 × 32 cores, 8 NUMA domains of 8
+cores), not the 7543 the job's comment names; `amdq` has both. One
+SSP3(4,3,3) step with trivial callbacks, so the step is its stage
+arithmetic alone:
+
+| threads | broadcast | owner, pinned, first touch | owner, pinned, interleaved | owner, unpinned |
+|---|---|---|---|---|
+| 1 | 182.4 ms, 23 GB/s | 163.3 ms, 24 GB/s | 187.1 ms, 21 GB/s | 162.1 ms, 24 GB/s |
+| 8 | 181.7 ms | 125.7 ms, 31 GB/s | 85.2 ms, 46 GB/s | 35.1 ms, 111 GB/s |
+| 16 | 181.6 ms | 63.1 ms, 62 GB/s | 44.3 ms, 88 GB/s | 33.5 ms, 117 GB/s |
+| 32 | 183.7 ms | 28.0 ms, 139 GB/s | 22.9 ms, 170 GB/s | 17.2 ms, 227 GB/s |
+| 64 | 182.1 ms, 23 GB/s | **10.4 ms, 376 GB/s** | 12.1 ms, 323 GB/s | 10.6 ms, 369 GB/s |
+
+What it says:
+- **The broadcast path is serial**, flat at 182 ms from 1 to 64 threads.
+  By owner, pinned with first touch, the step is 17.6× faster at 64
+  threads, at 376 GB/s, about 92% of the node's nominal 410 GB/s
+  (16 DDR4-3200 channels).
+- **Pinned first touch beats interleaving at 64 threads** by 16%
+  (10.4 against 12.1 ms), as TreeAMR found: pin the threads, then drop
+  the interleaving.
+- **Pinned runs below 64 threads fill one NUMA domain at a time**
+  (`JULIA_EXCLUSIVE=1` places thread `c` on core `c − 1`), so 8 pinned
+  threads share one domain's memory, which is why unpinned runs, spread by
+  the OS, are faster there. Only the 64-thread row compares like with
+  like.
+- **One combination** (8 reads, 1 write) at 64 threads: 3.50 ms,
+  258 GB/s by owner; 3.52 ms persistent; 48.7 ms broadcast.
+- **The launch** costs about 0.19 ms at 64 threads, fresh or persistent
+  (0.186 against 0.171 ms for 1000 entries per thread): thread wake-up,
+  not allocation. An SSP3(4,3,3) step is 9 combinations, so on a state
+  much smaller than 10⁷ entries the launches, not the bandwidth, set the
+  step time.
+- **Allocations** are as on the Mac, 489 bytes per thread per
+  combination: 31 296 bytes per combination and 238 656 per step at 64
+  threads, the same in all three placements.
 
 ### File layout (decided)
 
