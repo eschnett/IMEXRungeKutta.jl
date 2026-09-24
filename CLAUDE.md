@@ -45,11 +45,12 @@ into steps 0–6. What exists:
   Test, LinearAlgebra and TOML as test-only extras;
 - `src/IMEXRungeKutta.jl`, the module, which re-exports CommonSolve's
   `init`, `solve`, `solve!` and `step!` (no methods yet) and exports
-  `IMEXTableau` and the six named tableaus;
+  `IMEXTableau` and the seven named tableaus;
 - `src/tableau.jl`: `IMEXTableau{R}`, its checks, and the internals step
   2's plan reads: `solves`, `explicit_used`, `implicit_used`,
   `scratch_count` and `coefficients(T, Tt, tab)`;
 - `src/tableaus.jl`: `IMEXSSP222`, `IMEXSSP2322` (SSP2(3,2,2)),
+  `IMEXSSP2332` (SSP2(3,3,2), in neither upstream, so no oracle),
   `IMEXSSP3332`, `IMEXSSP3433`, `ARS222` and `ARS443`, in closed form;
 - `test/runtests.jl`, `test/scaffold_tests.jl`,
   `test/tableau_properties.jl` (test-only helpers: order conditions,
@@ -61,8 +62,9 @@ into steps 0–6. What exists:
 
 Step 2, the integrator, is next. `CODE.md` ("Tableaus", "Measured
 properties") has each tableau's patterns and scratch count, which the
-stage plan must reproduce. Upstream's `ARS443` differs from ours in `b̃`
-("Cross-checks"), which step 3's oracle test must allow for.
+stage plan must reproduce. Upstream's `ARS443` differs from ours, which
+is the paper's, in `b̃` ("Cross-checks"); step 3's oracle test must allow
+for it. SSP2(3,3,2) has no oracle.
 
 ## Commands
 

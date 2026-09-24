@@ -199,8 +199,10 @@ Changes:
   - the explicit-used and implicit-used patterns;
   - the conversion of the coefficients to `T` that step 2's plan uses,
     including `a_kj/a_jj` and `b_j/a_jj`.
-- **`src/tableaus.jl`:** `IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP3332`,
-  `IMEXSSP3433`, `ARS222` and `ARS443`, in closed form, each with a
+- **`src/tableaus.jl`:** `IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP2332`,
+  `IMEXSSP3332`, `IMEXSSP3433`, `ARS222` and `ARS443`, in closed form
+  (`IMEXSSP2332`, SSP2(3,3,2), added in step 1 at Erik's decision), each
+  with a
   comment citing the table in Pareschi & Russo (2005) or Ascher, Ruuth &
   Spiteri (1997).
   - SSP3(4,3,3) uses `α = (9 − √57)/6`, `β = α/4` and
@@ -351,7 +353,8 @@ Changes:
   coefficient.
 - **`test/oracle_tests.jl`:** `import OrdinaryDiffEqSDIRK as ODE`, and
   add it to `[extras]`.
-  - For each of the six tableaus, ten steps of a real linear problem
+  - For each of the six tableaus upstream has (all seven but SSP2(3,3,2),
+    which has no oracle), ten steps of a real linear problem
     with an explicit part that does not depend on `t` agree with
     upstream to 1e−12.
   - The problem is `SplitODEProblem(g, f, …)`, with upstream's default

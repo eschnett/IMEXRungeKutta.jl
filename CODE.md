@@ -53,20 +53,17 @@ existed:
   `U = u★ + γΔt g(U, t)`, computed by any means. The integrator recovers
   the implicit tendency as `k = (U − u★)/(γΔt)`. So no separate
   evaluation of `g` exists or is needed.
-- **The tableaus:** SSP2(2,2,2), SSP2(3,2,2), SSP3(3,3,2) and SSP3(4,3,3)
-  (Pareschi & Russo 2005), and ARS(2,2,2) and ARS(4,4,3) (Ascher, Ruuth &
-  Spiteri 1997). SSP3(4,3,3) is the intended production scheme, and
-  SSP2(2,2,2) the debugging one.
-  - This said SSP2(3,3,2) (amended in step 1). The name decided for it,
-    `IMEXSSP2322`, is SSPk(s,σ,p) = SSP2(3,2,2) by the naming rule in
-    [Tableaus are values](#tableaus-are-values-decided). Both upstreams
-    implement SSP2(3,2,2) under that name (OrdinaryDiffEqSDIRK's
-    `IMEXSSP2322`, ClimaTimeSteppers' `SSP322`). So that is the one here
-    (proposed in step 1).
-  - If the requirement meant a scheme of the paper's that is really
-    named SSP2(3,3,2), that one is not included. Neither upstream
-    implements one, and without the paper at hand its coefficients could
-    not be checked.
+- **The tableaus**, seven of them: SSP2(2,2,2), SSP2(3,2,2) and
+  SSP2(3,3,2), SSP3(3,3,2) and SSP3(4,3,3) (Pareschi & Russo 2005), and
+  ARS(2,2,2) and ARS(4,4,3) (Ascher, Ruuth & Spiteri 1997). SSP3(4,3,3)
+  is the intended production scheme, and SSP2(2,2,2) the debugging one.
+  - This listed SSP2(3,3,2) alone, as the scheme named `IMEXSSP2322`
+    (amended in step 1: Erik decided to have both).
+  - `IMEXSSP2322` is SSP2(3,2,2), by the SSPk(s,σ,p) naming rule in
+    [Tableaus are values](#tableaus-are-values-decided) (decided). Both
+    upstreams implement it under that name (OrdinaryDiffEqSDIRK's
+    `IMEXSSP2322`, ClimaTimeSteppers' `SSP322`).
+  - `IMEXSSP2332` is SSP2(3,3,2) (decided). It is in neither upstream.
 - **A stage limiter hook** and a step limiter hook. These are
   positivity- or atmosphere-type resets of the state, as in the SSPRK
   methods of OrdinaryDiffEqSSPRK.
@@ -112,8 +109,8 @@ this. ESDIRK-type additive schemes (KenCarp and the like) do not, since
 their first column needs `g(uⁿ)`. The tableau constructor checks it and
 throws an `ArgumentError` that says why.
 
-**Exact coefficients.** Only SSP2(3,2,2) and ARS(4,4,3) are rational
-(SSP2(3,3,2) before, amended in step 1).
+**Exact coefficients.** Only SSP2(3,2,2), SSP2(3,3,2) and ARS(4,4,3)
+are rational (amended in step 1).
 SSP2(2,2,2), SSP3(3,3,2) and ARS(2,2,2) involve `√2`, in closed form
 (`γ = 1 − 1/√2`, and so on). SSP3(4,3,3)'s `α, β, η` are printed to 14
 digits only (α = 0.24169426078821, β = 0.06042356519705,
@@ -170,21 +167,24 @@ Everything else is computed, not quoted.
 - the patterns, as the stages `k` where they hold. The scratch count is
   that of [The stage plan and storage](#the-stage-plan-and-storage-decided).
 
-| | SSP2(2,2,2) | SSP2(3,2,2) | SSP3(3,3,2) | SSP3(4,3,3) | ARS(2,2,2) | ARS(4,4,3) |
-|---|---|---|---|---|---|---|
-| held as | BigFloat | rational | BigFloat | BigFloat | BigFloat | rational |
-| order | 2 | 2 | 2 | 3 | 2 | 3 |
-| worst residual up to it | 0 | 0 (exact) | 0 | 0 | 8.6e−78 | 0 (exact) |
-| next order misses by | 0.167 | 0.167 | 0.069 | 0.083 | 0.187 | 0.097 |
-| stiffly accurate, implicit / explicit | no / no | yes / no | no / no | no / no | yes / yes | yes / yes |
-| `R(∞)` | 1.0e−76 | 0 (exact) | 8.6e−77 | −2.4e−76 | 0 | 0 (exact) |
-| A-stable | yes | yes | yes | yes | yes | yes |
-| so L-stable | yes | yes | yes | yes | yes | yes |
-| SSP coefficient | 1 | 1 | 1 | 1 | 0 | 0 |
-| solves (`a_kk ≠ 0`) | 1, 2 | 1–3 | 1–3 | 1–4 | 2, 3 | 2–5 |
-| explicit-used | 1, 2 | 2, 3 | 1–3 | 2–4 | 1, 2 | 1–4 |
-| implicit-used | 1, 2 | 1–3 | 1–3 | 1–4 | 2, 3 | 2–5 |
-| scratch arrays | 5 | 6 | 7 | 8 | 5 | 9 |
+| | SSP2(2,2,2) | SSP2(3,2,2) | SSP2(3,3,2) | SSP3(3,3,2) | SSP3(4,3,3) | ARS(2,2,2) | ARS(4,4,3) |
+|---|---|---|---|---|---|---|---|
+| held as | BigFloat | rational | rational | BigFloat | BigFloat | BigFloat | rational |
+| order | 2 | 2 | 2 | 2 | 3 | 2 | 3 |
+| worst residual up to it | 0 | 0 (exact) | 0 (exact) | 0 | 0 | 8.6e−78 | 0 (exact) |
+| next order misses by | 0.167 | 0.167 | 0.083 | 0.069 | 0.083 | 0.187 | 0.097 |
+| stiffly accurate, implicit / explicit | no / no | yes / no | yes / no | no / no | no / no | yes / yes | yes / yes |
+| `R(∞)` | 1.0e−76 | 0 (exact) | 0 (exact) | 8.6e−77 | −2.4e−76 | 0 | 0 (exact) |
+| A-stable | yes | yes | yes | yes | yes | yes | yes |
+| so L-stable | yes | yes | yes | yes | yes | yes | yes |
+| SSP coefficient | 1 | 1 | 2 | 1 | 1 | 0 | 0 |
+| solves (`a_kk ≠ 0`) | 1, 2 | 1–3 | 1–3 | 1–3 | 1–4 | 2, 3 | 2–5 |
+| explicit-used | 1, 2 | 2, 3 | 1–3 | 1–3 | 2–4 | 1, 2 | 1–4 |
+| implicit-used | 1, 2 | 1–3 | 1–3 | 1–3 | 1–4 | 2, 3 | 2–5 |
+| scratch arrays | 5 | 6 | 7 | 7 | 8 | 5 | 9 |
+
+The SSP2(3,3,2) column was added in step 1, after Erik's decision to
+have both SSP2 schemes (amended in step 1).
 
 The residuals and `R(∞)` of the BigFloat tableaus are 256-bit
 round-off. The next-order miss is at order 3 for the second-order
@@ -198,6 +198,7 @@ it (proposed in step 1):
 - SSP2(2,2,2) and ARS(2,2,2): `γ⁴y⁴` (= 0.00736 y⁴), with
   `γ = 1 − 1/√2`. Both implicit parts have the same `R`.
 - SSP2(3,2,2): `y⁴/8 + y⁶/64`.
+- SSP2(3,3,2): `y⁴/144 + y⁶/2304`.
 - SSP3(3,3,2): `0.00736 y⁴ + 0.000631 y⁶`.
 - SSP3(4,3,3): `0.00545 y⁴ + 0.000282 y⁶ + α⁸y⁸` (α⁸ = 1.16e−5).
 - ARS(4,4,3): `y⁴/24 + 5y⁶/144 + y⁸/256`.
@@ -207,8 +208,9 @@ for the rational tableaus, and to 256-bit round-off (about 1e−77) for
 the others.
 
 The explicit parts of the IMEX-SSP schemes are Heun's method and the
-three-stage SSPRK(3,3) of Shu & Osher. Their SSP coefficient is the
-optimal 1. The ARS explicit parts have negative coefficients, and so
+three-stage SSPRK(3,3) of Shu & Osher, with SSP coefficient 1, and for
+SSP2(3,3,2) the three-stage second-order SSPRK(3,2), with coefficient 2.
+Each is the optimal value for its stages and order. The ARS explicit parts have negative coefficients, and so
 coefficient 0: `δ = −1/√2` in ARS(2,2,2), and `ã₄₂ = −5/6` and
 `ã₅₄ = b̃₄ = −7/4` in ARS(4,4,3).
 Step 3 measures what that means for TVD advection.
@@ -228,24 +230,40 @@ exception. Two coefficients escape the order conditions alone:
 **Cross-checks** (measured in step 1). Each tableau was compared, by
 reading only, with OrdinaryDiffEqSDIRK 2.9.6
 (`src/imex_tableaus.jl`) and ClimaTimeSteppers (`main`,
-`src/solvers/imex_tableaus.jl`, fetched 2026-09-24). The papers were not
-at hand. Where the citations in `src/tableaus.jl` give a table number,
-it is OrdinaryDiffEqSDIRK's, and they say so.
+`src/solvers/imex_tableaus.jl`, fetched 2026-09-24).
+- The ARS schemes were also checked against the paper itself, from
+  Erik's copy.
+- Pareschi & Russo's paper was not at hand. Where the citations in
+  `src/tableaus.jl` give a table number for it, the number is
+  OrdinaryDiffEqSDIRK's, and they say so.
 - SSP2(2,2,2), SSP2(3,2,2) (`SSP322` there), SSP3(3,3,2) (`SSP332`) and
-  ARS(2,2,2) agree with both, coefficient for coefficient.
+  ARS(2,2,2) agree with both, coefficient for coefficient. ARS(2,2,2)
+  also agrees with ARS (1997) §2.6, p. 158: `γ = (2 − √2)/2`,
+  `δ = 1 − 1/(2γ)`, explicit weights `(δ, 1 − δ, 0)`.
+- SSP2(3,3,2) is in neither upstream (amended in step 1). Its
+  coefficients are Erik's transcription of Pareschi & Russo (2005).
+  Only the order conditions and the review's symbolic check test them.
+  These give order 2, and `bᵀAc − 1/6 = 1/24` at order 3. It has no
+  oracle.
 - SSP3(4,3,3) (`SSP433`) agrees with both, up to their 14-digit
   `α, β, η`, which are the closed form rounded (a test).
-- **ARS(4,4,3) disagrees in `b̃`.** ClimaTimeSteppers takes `b̃` as the
-  last row of `Ã`, `(1/4, 7/4, 3/4, −7/4, 0)`, so the explicit part is
-  stiffly accurate and uses four stages, the "4 explicit stages" of the
-  name. OrdinaryDiffEqSDIRK has `b̃ = b = (0, 3/2, −3/2, 1/2, 1/2)`.
-  - That is also third order, exactly, and it misses the classical
-    order-4 conditions by up to 0.076 (a test).
-  - But it reads the explicit tendency of stage 5, so it makes five
-    explicit evaluations per step, not four.
-  - Here `b̃` is the last row of `Ã`, as in ClimaTimeSteppers and as
-    the name requires (proposed in step 1). It should be confirmed
-    against the paper, §2.8.
+- **ARS(4,4,3) disagrees in `b̃`.**
+  - ARS (1997) §2.8, p. 160, prints the explicit tableau with last row
+    `(1/4, 7/4, 3/4, −7/4, 0)` and a weight row `b̃` identical to it. It
+    prints the implicit last row and `b` both as
+    `(0, 3/2, −3/2, 1/2, 1/2)`.
+  - So the explicit part is stiffly accurate, and it uses four stages,
+    the "4 explicit stages" of the name. ClimaTimeSteppers agrees.
+  - Here `b̃` is the paper's (decided: Erik checked the paper, and so did
+    step 1).
+  - OrdinaryDiffEqSDIRK 2.9.6's `ARS443` has
+    `b̃ = b = (0, 3/2, −3/2, 1/2, 1/2)`, which is not the paper's. It is
+    also third order, exactly, and misses the classical order-4
+    conditions by up to 0.076 (a test). But it reads the explicit
+    tendency of stage 5, so it makes five explicit evaluations per step,
+    not four.
+  - This is a possible upstream issue, for Erik to report. Nothing has
+    been filed.
   - Step 3's oracle comparison of ARS(4,4,3) must therefore compare with
     `IMEXTableau("…", Ã, b, A, b)`, built from `ARS443()`'s parts, not
     with `ARS443()`.
@@ -466,9 +484,11 @@ step limiter, `integ.u` is undefined.
   and the [admissibility](#tableaus) condition. Each failure is an
   `ArgumentError` that says why.
 - **Named constructors** (decided): `IMEXSSP222()`, `IMEXSSP2322()`,
-  `IMEXSSP3332()`, `IMEXSSP3433()`, `ARS222()` and `ARS443()`.
+  `IMEXSSP2332()`, `IMEXSSP3332()`, `IMEXSSP3433()`, `ARS222()` and
+  `ARS443()` (`IMEXSSP2332()` added in step 1).
   - These are OrdinaryDiffEq's names, so an oracle test reads as a
-    comparison of like with like.
+    comparison of like with like. `IMEXSSP2332` has no upstream
+    counterpart; it follows the same rule.
   - `IMEXSSPksσp` is Pareschi–Russo's SSPk(s,σ,p). The short
     `IMEXSSP222` is SSP2(2,2,2).
   - They clash with OrdinaryDiffEqSDIRK's exports, so the tests
@@ -493,7 +513,7 @@ What step 1 settled (proposed in step 1):
   chooses explicitly.
 - **Two more refusals:** a tableau with no stages, and a coefficient
   that is not finite.
-- **`IMEXTableau` is exported** beside the six names, for a caller's own
+- **`IMEXTableau` is exported** beside the seven names, for a caller's own
   tableau.
 - **Internal functions for step 2's plan**, in `src/tableau.jl`:
   - `nstages`, and the per-stage patterns `solves`, `explicit_used` and
@@ -626,7 +646,7 @@ can come in a later step without changing the interface.
 
 - `src/IMEXRungeKutta.jl`: the module and its exports.
 - `src/tableau.jl`: `IMEXTableau`, its checks, and the conversion to `T`.
-- `src/tableaus.jl`: the six tableaus, in closed form.
+- `src/tableaus.jl`: the seven tableaus, in closed form.
 - `src/plan.jl`: the stage plan.
 - `src/lincomb.jl`: fused linear combinations, broadcast and threaded.
 - `src/integrator.jl`: `IMEXProblem`, `init`, `step!` and `solve!`.
@@ -707,7 +727,10 @@ restrictions apply:
 - its `ARS443` has `b̃ = b`, where this package has the last row of `Ã`
   (amended in step 1; see "Cross-checks" under [Tableaus](#tableaus)). So
   the comparison for ARS(4,4,3) is against a tableau built with upstream's
-  `b̃`.
+  `b̃`;
+- SSP2(3,3,2) is in neither upstream, so it has no oracle (amended in
+  step 1). Its coefficients rest on the order conditions and the
+  transcription alone.
 
 ### ClimaTimeSteppers (1.0.1)
 
@@ -790,7 +813,8 @@ failure mode it guards.
   variation non-increasing for `Δt ≤ C Δt_FE`; the measured `C` is
   recorded against the explicit part's SSP coefficient.
 - **Oracle:** each tableau OrdinaryDiffEqSDIRK has matches it to 1e−12
-  over ten steps, within the restrictions above.
+  over ten steps, within the restrictions above. That is all but
+  SSP2(3,3,2) (amended in step 1).
 
 ## Open questions
 
