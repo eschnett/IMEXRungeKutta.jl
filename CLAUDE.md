@@ -45,7 +45,7 @@ and the open questions. Erik decided every proposal the steps made on
 2026-09-24, the last (fresh tasks rather than persistent workers) through
 the Symmetry run he asked for. Open or pending:
 - where a TreeAMR state vector's ownership partition comes from (open);
-- the v0.1.0 tag, which is Erik's (below);
+- the v1.0.0 tag, which is Erik's (below);
 - #4620 upstream ("Repository facts").
 
 What exists:
@@ -101,12 +101,12 @@ What exists:
 - `.github/workflows/CI.yml`, with five cells (`CODE.md`, "File
   layout"), and `.github/dependabot.yml`;
 - `README.md`, with the CI and Codecov badges, installation by URL, the
-  worked example and the 0.1.0 status.
+  worked example and the 1.0.0 status.
 
 **TreeGRRMHD's step 5 may start.** It needs 4b, which is this step 2. It
 adds the package by URL, now the remote's,
 `Pkg.add(url = "https://github.com/eschnett/IMEXRungeKutta.jl")`, and,
-once Erik has tagged it, with `rev = "v0.1.0"`. On Metal, each new state
+once Erik has tagged it, with `rev = "v1.0.0"`. On Metal, each new state
 length costs about a second of kernel compilation in Metal's broadcast
 (`CODE.md`, "On a device"), which a regrid pays.
 
@@ -115,12 +115,12 @@ SSP3(4,3,3), its L-stability, its order in the stiff limit and where its
 step ends there, are in `CODE.md`, "Where a step ends in the stiff limit"
 and "Validation".
 
-**0.1.0 is prepared, not tagged.** Before the tag: Erik commits his
-`LICENSE.md` (MIT); the remote's `main`, which has steps 0–2, gets steps 3
-and 4; and CI is green there. The tag, and any registration, are Erik's.
-Steps 5 and 6 are on local `main` too, after the 0.1.0 commit (ea555c6),
-while `Project.toml` still says 0.1.0: whether the tag goes on that commit
-or a later one, and the next version number, are Erik's.
+**1.0.0 is prepared, not tagged.** `Project.toml` says 1.0.0 (Erik's
+decision, 2026-09-24; no 0.1.0 was ever tagged). The license is committed,
+`main` is on the remote, and CI is green there. The tag, and any
+registration, are Erik's. With 1.0.0 the interface in `CODE.md`, "The
+interface" and "The callback contracts", is the public API under semantic
+versioning: a change to it is a major version.
 
 ## Commands
 

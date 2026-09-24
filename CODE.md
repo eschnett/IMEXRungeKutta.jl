@@ -21,7 +21,8 @@ Symmetry run, as he asked
 Open or pending:
 - where the partition for TreeAMR state vectors comes from (open;
   [Stage arithmetic](#stage-arithmetic-decided));
-- the v0.1.0 tag, which is Erik's;
+- the v1.0.0 tag, which is Erik's (the version is 1.0.0 since
+  2026-09-24, Erik's decision; no 0.1.0 was tagged);
 - SciML/OrdinaryDiffEq.jl#4620 upstream, until whose fix two oracle
   comparisons are `@test_broken` ([The oracle](#the-oracle)).
 
