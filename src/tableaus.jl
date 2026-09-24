@@ -1,4 +1,4 @@
-# The six named tableaus, in closed form ("Tableaus" in `CODE.md`).
+# The seven named tableaus, in closed form ("Tableaus" in `CODE.md`).
 #
 # They are functions, not constants, because a BigFloat does not survive
 # precompilation reliably. The irrational ones are computed inside
@@ -7,11 +7,12 @@
 #
 # Each is cross-checked against OrdinaryDiffEqSDIRK's `imex_tableaus.jl`
 # (2.9.6) and ClimaTimeSteppers' `src/solvers/imex_tableaus.jl` (main,
-# 2026-09-24), by reading them; `CODE.md` ("Tableaus", "Cross-checks")
-# records the one disagreement. The independent check of each
-# transcription is the order conditions in `test/tableau_tests.jl`. The
-# table numbers are OrdinaryDiffEqSDIRK's; the papers themselves were not
-# at hand in step 1.
+# 2026-09-24), by reading them, except SSP2(3,3,2), which neither has.
+# `CODE.md` ("Tableaus", "Cross-checks") records the one disagreement. The
+# ARS schemes are cited by the paper's own section and page, checked
+# against it. The Pareschi–Russo table numbers are OrdinaryDiffEqSDIRK's,
+# as that paper was not at hand. The independent check of each
+# transcription is the order conditions in `test/tableau_tests.jl`.
 
 # `1 − 1/√2`, the diagonal of SSP2(2,2,2), SSP3(3,3,2) and ARS(2,2,2),
 # which makes each implicit part L-stable. Call inside
@@ -52,7 +53,8 @@ which the first is not explicit-used; second order, with the diagonal
 `1/2` and a stiffly accurate implicit part. It is rational, and so held
 exactly as `Rational{BigInt}`. `IMEXSSPksσp` is SSPk(s,σ,p), so this is
 SSP2(3,2,2), as OrdinaryDiffEqSDIRK and ClimaTimeSteppers (`SSP322`) have
-it. The measured properties are in `CODE.md`, "Tableaus".
+it; SSP2(3,3,2) is [`IMEXSSP2332`](@ref). The measured properties are in
+`CODE.md`, "Tableaus".
 """
 function IMEXSSP2322()
     # Pareschi & Russo (2005), IMEX-SSP2(3,2,2), the stiffly accurate
@@ -67,6 +69,34 @@ function IMEXSSP2322()
             0 1//2 1//2])
     b = q.([0, 1 // 2, 1 // 2])
     return IMEXTableau{Rational{BigInt}}("SSP2(3,2,2)", Ã, b̃, A, b)
+end
+
+"""
+    IMEXSSP2332()
+
+SSP2(3,3,2) of Pareschi & Russo (2005): three stages, all explicit-used
+and all solving, second order, with the diagonal `(1/4, 1/4, 1/3)` and a
+stiffly accurate implicit part. The explicit part is the three-stage
+second-order SSP method (SSP coefficient 2). It is rational, and so held
+exactly as `Rational{BigInt}`. Neither OrdinaryDiffEqSDIRK nor
+ClimaTimeSteppers has it, so it has no oracle. Not to be confused with
+[`IMEXSSP2322`](@ref), SSP2(3,2,2). The measured properties are in
+`CODE.md`, "Tableaus".
+"""
+function IMEXSSP2332()
+    # Pareschi & Russo (2005), IMEX-SSP2(3,3,2), the stiffly accurate
+    # scheme with three explicit stages. Coefficients as Erik transcribed
+    # them from the paper (2026-09-24); in neither upstream.
+    q(x) = Rational{BigInt}(x)
+    Ã = q.([0 0 0
+            1//2 0 0
+            1//2 1//2 0])
+    b̃ = q.([1 // 3, 1 // 3, 1 // 3])
+    A = q.([1//4 0 0
+            0 1//4 0
+            1//3 1//3 1//3])
+    b = q.([1 // 3, 1 // 3, 1 // 3])
+    return IMEXTableau{Rational{BigInt}}("SSP2(3,3,2)", Ã, b̃, A, b)
 end
 
 """
@@ -140,7 +170,7 @@ end
 """
     ARS222()
 
-ARS(2,2,2) of Ascher, Ruuth & Spiteri (1997): a trivial first stage
+ARS(2,2,2) of Ascher, Ruuth & Spiteri (1997), §2.6: a trivial first stage
 (`a_11 = 0`, so `U₁ = uⁿ`), then two solving stages, second order, with
 the diagonal `γ = 1 − 1/√2` and `δ = 1 − 1/(2γ) = −1/√2`. Both parts are
 stiffly accurate: `b` and `b̃` are the last rows of `A` and `Ã`, so the
@@ -149,8 +179,9 @@ of 256-bit `BigFloat`; the measured properties are in `CODE.md`,
 "Tableaus".
 """
 function ARS222()
-    # Ascher, Ruuth & Spiteri (1997), §2.6, ARS(2,2,2) (Table V in
-    # OrdinaryDiffEqSDIRK's numbering).
+    # Ascher, Ruuth & Spiteri (1997), §2.6, p. 158: the two-stage L-stable
+    # DIRK of §2.5 with γ = (2 − √2)/2, and the explicit weights
+    # (δ, 1 − δ, 0), δ = 1 − 1/(2γ), that make it stiffly accurate.
     return with_coefficient_precision() do
         γ = gamma_sqrt2()
         δ = 1 - 1 / (2γ)
@@ -170,20 +201,22 @@ end
 """
     ARS443()
 
-ARS(4,4,3) of Ascher, Ruuth & Spiteri (1997): a trivial first stage, then
+ARS(4,4,3) of Ascher, Ruuth & Spiteri (1997), §2.8: a trivial first stage, then
 four solving stages with the diagonal `1/2`, third order. Both parts are
 stiffly accurate: `b` and `b̃` are the last rows of `A` and `Ã`, so the
 explicit part uses stages 1–4 only, the four explicit stages of the name.
 It is rational, and so held exactly as `Rational{BigInt}`.
 
-OrdinaryDiffEqSDIRK's `ARS443` has `b̃ = b` instead, which evaluates the
-explicit part at stage 5 too; ClimaTimeSteppers' agrees with this one
-(`CODE.md`, "Tableaus", "Cross-checks"). The measured properties are in
-`CODE.md`, "Tableaus".
+These are the paper's weights (§2.8, p. 160), as in ClimaTimeSteppers.
+OrdinaryDiffEqSDIRK 2.9.6's `ARS443` has `b̃ = b` instead, which is not
+the paper's and evaluates the explicit part at stage 5 too (`CODE.md`,
+"Tableaus", "Cross-checks"). The measured properties are in `CODE.md`,
+"Tableaus".
 """
 function ARS443()
-    # Ascher, Ruuth & Spiteri (1997), §2.8, ARS(4,4,3) (Table VII in
-    # OrdinaryDiffEqSDIRK's numbering).
+    # Ascher, Ruuth & Spiteri (1997), §2.8, p. 160. The paper prints the
+    # explicit weights b̃ = (1/4, 7/4, 3/4, −7/4, 0), identical to the last
+    # row of Ã, and b = (0, 3/2, −3/2, 1/2, 1/2), the last row of A.
     q(x) = Rational{BigInt}(x)
     Ã = q.([0 0 0 0 0
             1//2 0 0 0 0

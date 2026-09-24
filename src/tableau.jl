@@ -25,7 +25,7 @@ differ in general: an explicit evaluation of stage `k` is at
 The coefficients are held exactly, as `R = Rational{BigInt}`, when every
 one given is an integer or a rational, and otherwise as 256-bit `BigFloat`.
 They are converted to the state's arithmetic type once, when an integrator
-is built. The six named tableaus ([`IMEXSSP3433`](@ref) and the others)
+is built. The seven named tableaus ([`IMEXSSP3433`](@ref) and the others)
 go through this constructor, and so does a caller's own.
 
 The constructor refuses, with an `ArgumentError` that says why:

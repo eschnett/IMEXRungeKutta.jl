@@ -28,7 +28,8 @@ using CommonSolve: CommonSolve, init, solve, solve!, step!
 
 export init, solve, solve!, step!
 export IMEXTableau
-export IMEXSSP222, IMEXSSP2322, IMEXSSP3332, IMEXSSP3433, ARS222, ARS443
+export IMEXSSP222, IMEXSSP2322, IMEXSSP2332, IMEXSSP3332, IMEXSSP3433
+export ARS222, ARS443
 
 # The source files of "File layout" in `CODE.md` are included here as they
 # are written: `tableau.jl`, `tableaus.jl`, `plan.jl`, `lincomb.jl` and

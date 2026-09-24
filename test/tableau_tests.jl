@@ -1,5 +1,6 @@
 using IMEXRungeKutta: IMEXRungeKutta, IMEXTableau
-using IMEXRungeKutta: IMEXSSP222, IMEXSSP2322, IMEXSSP3332, IMEXSSP3433, ARS222, ARS443
+using IMEXRungeKutta: IMEXSSP222, IMEXSSP2322, IMEXSSP2332, IMEXSSP3332, IMEXSSP3433
+using IMEXRungeKutta: ARS222, ARS443
 
 # The properties of each named tableau, as measured in step 1 and recorded
 # in `CODE.md` ("Tableaus", "Measured properties"). `stiffly_accurate` is
@@ -13,6 +14,10 @@ const TABLEAUS = [
      stiffly_accurate = (true, false), ssp = 1,
      solves = Bool[1, 1, 1], explicit_used = Bool[0, 1, 1],
      implicit_used = Bool[1, 1, 1], scratch = 6),
+    (make = IMEXSSP2332, name = "SSP2(3,3,2)", R = Rational{BigInt}, order = 2,
+     stiffly_accurate = (true, false), ssp = 2,
+     solves = Bool[1, 1, 1], explicit_used = Bool[1, 1, 1],
+     implicit_used = Bool[1, 1, 1], scratch = 7),
     (make = IMEXSSP3332, name = "SSP3(3,3,2)", R = BigFloat, order = 2,
      stiffly_accurate = (false, false), ssp = 1,
      solves = Bool[1, 1, 1], explicit_used = Bool[1, 1, 1],
@@ -150,6 +155,8 @@ end
     @test tab.c̃[1] != tab.c[1]
     @test IMEXSSP2322().c̃ == [0, 0, 1]
     @test IMEXSSP2322().c == [1 // 2, 0, 1]
+    @test IMEXSSP2332().c̃ == [0, 1 // 2, 1]
+    @test IMEXSSP2332().c == [1 // 4, 1 // 4, 1]
     @test ARS443().c == ARS443().c̃ == [0, 1 // 2, 2 // 3, 1 // 2, 1]
 end
 
@@ -171,6 +178,11 @@ end
         @test abs(tab.A[2, 2] - (1 - 1 / sqrt(BigFloat(2)))) < 1e-70
         @test abs(tab.Ã[3, 1] + 1 / sqrt(BigFloat(2))) < 1e-70
     end
+    # SSP2(3,3,2) as transcribed from the paper, with the one order-3 miss
+    # the review computed symbolically: bᵀAc − 1/6 = 1/24.
+    tab = IMEXSSP2332()
+    @test Dict(order_residuals(tab, 3))["bᵀAc"] == 1 // 24
+    @test [tab.A[k, k] for k in 1:3] == [1 // 4, 1 // 4, 1 // 3]
 end
 
 # A closed form evaluated at the global precision would change with a
@@ -331,8 +343,8 @@ end
     @test 1e-13 < abs(R_infinity(printed)) < 1e-12
 end
 
-# OrdinaryDiffEqSDIRK's ARS443 has b̃ = b, where the paper and
-# ClimaTimeSteppers have b̃ = the last row of Ã. Step 3's oracle comparison
+# OrdinaryDiffEqSDIRK's ARS443 has b̃ = b, where the paper (§2.8, p. 160)
+# and ClimaTimeSteppers have b̃ = the last row of Ã. Step 3's oracle comparison
 # of ARS(4,4,3) depends on knowing that both are third order and that
 # upstream's evaluates the explicit part at stage 5 as well.
 @testset "Upstream's ARS(4,4,3) variant, b̃ = b, is a different third-order method" begin
