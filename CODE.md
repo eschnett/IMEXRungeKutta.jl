@@ -8,10 +8,12 @@ item is marked **(decided)**, **(proposed)** or **(open)**.
 **Status (2026-09-24):** the [package design](#package-design) is
 complete, except where the partition for TreeAMR state vectors comes
 from (open). SSP2(3,3,2)'s coefficients are still to be checked against
-the paper (open). The implementation plan is `PLAN.md`. Steps 0–3, the
-scaffolding, the tableaus, the integrator on the broadcast path and the
-validation, are done ([Validation](#validation-measured-in-step-3));
-step 4, the Metal smoke test and v0.1.0, is next.
+the paper (open). The implementation plan is `PLAN.md`. Steps 0–4, the
+scaffolding, the tableaus, the integrator on the broadcast path, the
+validation ([Validation](#validation-measured-in-step-3)) and the Metal
+smoke run ([On a device](#on-a-device-measured-in-step-4)), are done, and
+v0.1.0 is prepared; the tag is Erik's. Step 5, the stage arithmetic by
+owner, is next.
 
 ## Purpose
 
@@ -76,7 +78,10 @@ existed:
   `similar(u0)` arrays, so device arrays work. The package must not
   require a particular array type. A faster path for a CPU `Array` is
   allowed alongside (amended 2026-09-24, see
-  [Stage arithmetic](#stage-arithmetic-decided-details-proposed)).
+  [Stage arithmetic](#stage-arithmetic-decided-details-proposed)). On
+  Metal, a `Float32` `MtlArray` state runs with scalar indexing
+  disallowed and agrees with the CPU bitwise (measured in step 4; [On a
+  device](#on-a-device-measured-in-step-4)).
 - **Julia 1.10 floor**, generic in the scalar type `T` (Float32 must
   work).
 - **Minimal dependencies.** Only CommonSolve at run time (amended
@@ -845,6 +850,11 @@ one `broadcast!` each; step 5 adds methods (proposed in step 2).
   whole dependency picture. TOML is among them, for the `[deps]` check,
   and OrdinaryDiffEqSDIRK, for the oracle, with a `[compat]` bound
   (amended in step 3; [The oracle](#the-oracle)).
+- The one exception is the device smoke run (proposed in step 4):
+  `test/metal_tests.jl` runs in `test/metal/Project.toml`, whose
+  dependencies are Metal, Test and this package, developed from `../..`.
+  `runtests.jl` does not include it. See
+  [On a device](#on-a-device-measured-in-step-4).
 - `.github/workflows/CI.yml` (proposed in step 0) has four cells: Julia
   1.10 on Linux; the current release on Linux, with
   `--check-bounds=yes` and coverage; the current release on macOS; and
@@ -852,6 +862,8 @@ one `broadcast!` each; step 5 adds methods (proposed in step 2).
   bounds-checked one runs with `--check-bounds=auto`, so that the
   allocation tests run on the floor and at four threads.
   `julia-runtest`'s default, `yes`, would skip them in every cell.
+  There is no Metal cell (proposed in step 4): GitHub's hosted macOS
+  arm64 runners are virtual machines without Metal support.
 
 ### Documentation (decided)
 
@@ -859,6 +871,13 @@ README and docstrings, no Documenter site for now. Docstrings are
 prose-first and point at this document. The README has a worked
 example, including a stage solver. A site can be added later without
 changing anything else.
+
+The README carries one badge, CI's, for `.github/workflows/CI.yml` on
+`main` of `eschnett/IMEXRungeKutta.jl` (proposed in step 4). CI's
+bounds-checked cell uploads coverage to Codecov on `main`, but only with
+a `CODECOV_TOKEN` secret that this repository may not have, and with
+`fail_ci_if_error: false`. So there is no Codecov badge until an upload
+has been seen to succeed.
 
 ## Why not an existing package
 
@@ -995,9 +1014,10 @@ failure mode it guards.
   - a device smoke run passes on Metal, gated by
     `IMEXRUNGEKUTTA_TEST_METAL=1`. It is a short `Float32` run on an
     `MtlArray` state with scalar indexing disallowed, so it covers the
-    broadcast path and checks that nothing indexes the state. How Metal
-    enters the test environment without being installed everywhere is
-    settled in the plan.
+    broadcast path and checks that nothing indexes the state. Metal
+    enters through an environment of its own, `test/metal/Project.toml`,
+    and never through the package's test environment (amended in step
+    4; [On a device](#on-a-device-measured-in-step-4)).
 - **Order:**
   - on the split linear ODE `u′ = iu − u`, the observed order equals the
     tableau's, ±0.1;
@@ -1209,6 +1229,102 @@ real components, `Lu` implicit. Upstream is OrdinaryDiffEqSDIRK 2.9.6.
   `"2.9.6"`, that is `[2.9.6, 3)` (proposed in step 3). A release that
   fixes #4620 turns the two `@test_broken` into unexpected passes, which
   fail the suite, and so is noticed.
+
+## On a device (measured in step 4)
+
+`test/metal_tests.jl`, on an Apple M3, with Metal 1.11.1 (GPUArrays
+11.5.14), under Julia 1.13.0 and 1.10.12. The numbers are the same on both
+unless given for each.
+
+**How Metal gets in** (proposed in step 4). `PLAN.md` offered a separate
+environment or a conditional `Pkg.add` in the gated file. It is the
+separate environment, `test/metal/Project.toml`:
+- `[deps]` Metal, Test and this package; `[compat]` Metal `"1.11"`;
+  `[sources]` points this package at `../..`. Julia 1.11 and later read
+  `[sources]`; 1.10 ignores it, so the command in `CLAUDE.md` runs
+  `Pkg.develop(path = ".")` first, which works on both and leaves the
+  tracked file unchanged. The root `Project.toml` still has no `[sources]`.
+- Its manifest has 99 packages on 1.13 and 96 on 1.10, standard
+  libraries included, and not OrdinaryDiffEqSDIRK. The run takes 14 s on
+  1.13 and 11 s on 1.10, most of it compiling kernels.
+- A `Pkg.add` inside the gated file would instead change `Pkg.test()`'s
+  sandbox from within the test run, and resolve Metal against the whole
+  test environment, oracle included.
+
+**The gate** (proposed in step 4). Without `IMEXRUNGEKUTTA_TEST_METAL=1`
+the file logs that it is skipped and exits 0 before loading anything. With
+it, a Metal that is not functional fails the run: the run was asked for.
+`runtests.jl` does not include the file.
+
+**The ordinary suite never sees Metal** (tests, in `scaffold_tests.jl`
+and at the end of `runtests.jl`): Metal is in none of the root
+`Project.toml`'s `[deps]`, `[weakdeps]`, `[extras]` or test target; it is
+not in the resolved test environment's manifest; under `Pkg.test()`, whose
+load path is that environment alone, `Base.find_package("Metal")` is
+`nothing` (Erik's global environment has Metal, so a plain
+`julia --project=.` run would find it there, and the check is skipped
+when the load path includes `@v#.#`); and after the last file no loaded
+module is Metal. A test also checks that `test/metal/Project.toml` names
+this package's UUID and points at this checkout.
+
+**The run.** `u′ = cos t − κu − (u − ū)/ε` in 4096 cells, `κ = 1/2`,
+`ū = 1 + x`, `u(0) = ū + sin 2πx` and `ε = 10^{−3+3x}` for
+`x = 0, 1/4096, …`, so that `Δt/ε` runs from 100 to 0.1. `f_exp!`, the
+closed-form stage solve and both limiters, a floor far below the solution
+that changes nothing, are one broadcast each. Ten steps of `Δt = 0.1`, of
+SSP2(2,2,2) and SSP3(4,3,3), with `Float64` and with `Float32` time, on an
+`MtlArray{Float32}` state with `Metal.allowscalar(false)` (a test that
+scalar indexing then throws), against the same run on the CPU in
+`Float32`.
+- **Float64 is not needed on the device.** An `MtlArray{Float64}` is
+  refused ("Metal does not support Float64 values"). The time stays on
+  the host in its own type; every coefficient in a kernel, `γΔt`
+  included, is `T`. A callback converts what it takes from `t` before its
+  kernel, as `f_exp!` does with `T(cos t)`.
+- **The device agrees with the CPU bitwise**: 0 ulps after every step, in
+  all four runs, on both Julia versions. So Metal contracted nothing to an
+  FMA here, and its division rounded as the CPU's does.
+- **The tolerance is 4 ulps per step** (proposed in step 4), in units of
+  `eps(Float32) · max|u|`, cumulative: `4n` after step `n`. Contraction or
+  a differently rounded division changes roundings, not the arithmetic,
+  so the two runs differ by at most the sum of their rounding errors, and
+  those do not grow here (the stiff cells contract; the others grow by
+  `1 + O(Δt)`). The CPU run in `Float32` is 11.5 (SSP2(2,2,2)) and 15.4
+  (SSP3(4,3,3)) of these units from the same run in `Float64` after ten
+  steps, about 1.5 per step. A wrong coefficient is far outside it: the
+  two tableaus differ by 41349.
+- **The test has teeth**, checked by mutation of `lincomb!`: a scalar
+  loop in place of the broadcast fails every device testset with
+  "Scalar indexing is disallowed", and `Float64` coefficients fail them
+  with an `InvalidIRError` naming `Float64`.
+
+**Host allocations of a step** (measured, not asserted zero). Each
+broadcast on Metal is a kernel launch, which allocates on the host. At
+steady state (after three steps; the least over five more):
+
+| | launches per step | Julia 1.13 | Julia 1.10 |
+|---|---|---|---|
+| SSP2(2,2,2) | 13 | 22 656 B (1.74 KB per launch) | 36 880 B (2.84 KB) |
+| SSP3(4,3,3) | 23 | 42 112 B (1.83 KB per launch) | 68 640 B (2.98 KB) |
+| one `a .= b`, for scale | 1 | 1 280 B | 2 352 B |
+
+- The launches are the plan's combinations (`u★`, the copy into `U`, the
+  increment, the update) plus one per callback call, limiters included.
+  A launch with more operands captures more, hence above `a .= b`.
+- At 256 times the state, 2²⁰ cells, a step allocates the same, 22 656 B
+  and 41 760 B on 1.13, so nothing is state-sized. The test asserts that
+  (to 25%); a host copy of that state alone would be 4 MiB.
+
+**Metal compiles per state size** (measured in step 4). Metal specializes
+a broadcast kernel on the array's shape once it has launched that shape
+more than ten times (`BROADCAST_SPECIALIZATION_THRESHOLD` in its
+`broadcast.jl`). So the second step at a new state length compiles every
+kernel of the step again: for SSP2(2,2,2) on 1.13, 0.90–1.12 s and about
+253 MB of host allocation, at 65 536 and at 100 000 cells after 4096; a
+length seen before costs nothing. After that, enqueueing a step takes
+40–50 µs of host time at 4096 cells. For TreeGRRMHD, where every regrid
+changes the state length, that is about a second per new length on
+Metal, from Metal's broadcast and not from this package.
 
 ## Open questions
 

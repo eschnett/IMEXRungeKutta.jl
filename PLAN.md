@@ -7,7 +7,8 @@ it says what changes, what must not change, and what must be measured
 and recorded. `CLAUDE.md` has the mechanics. Delete this file when the
 last step is marked *(Done.)*.
 
-**Steps 0–3 are done. Step 4 is next.**
+**Steps 0–4 are done. Step 5 is next.** The 0.1.0 tag of step 4 is
+Erik's, and waits on his `LICENSE.md` and a green CI on the remote.
 
 Each step ends in a green suite and a `CODE.md` update, and each is a
 brief that a single session can carry. The steps are in dependency
@@ -30,8 +31,8 @@ order. TreeGRRMHD's `PLAN.md` calls three of them by its own names:
   - Commit in TreeAMR's style: implement, then measure, then record, with
     the measured numbers in the commit body.
   - **Do not merge into `main` and do not push.** Report the branch and
-    its commits. There is no remote yet; when there is one, the rule
-    stands.
+    its commits. There is a remote now, `origin` on GitHub, and the rule
+    stands: pushes, tags and releases are Erik's.
 - **Never edit a sibling checkout.** That includes TreeAMR, TreeGRRMHD,
   TreeHydro, and the upstream reference implementations in
   OrdinaryDiffEq and ClimaTimeSteppers. If a step needs something
@@ -156,6 +157,15 @@ This is TreeGRRMHD's pattern.
     `test/runtests.jl` is the flag to skip on.
 - **Mocks** record their calls into preallocated buffers in `p`, so the
   mechanics tests can also run under the allocation helper.
+- **Metal** (measured in step 4; `CODE.md`, "On a device").
+  - It is never in the root `Project.toml`; the smoke run has its own
+    environment, `test/metal/Project.toml`, and commands in `CLAUDE.md`.
+  - The device has no `Float64`. Only `T` may reach a kernel; the time
+    stays on the host, and a callback converts what it takes from `t`.
+  - Metal compiles a shape-specialized kernel once a shape has been
+    broadcast more than ten times, so the second step at a new state
+    length compiles for about a second and allocates about 250 MB. Warm
+    up three steps before measuring anything.
 
 ## Step 0 — Scaffolding *(Done, 2026-09-24.)*
 
@@ -377,7 +387,7 @@ Accept:
 - The report gives the numbers TreeGRRMHD's "The partition" should be
   amended with. Erik makes that edit, not this step.
 
-## Step 4 — Metal smoke test, then v0.1.0
+## Step 4 — Metal smoke test, then v0.1.0 *(Done, 2026-09-24; the tag is Erik's.)*
 
 `CODE.md`: "Testing" (Mechanics, the device smoke run).
 
@@ -400,6 +410,11 @@ Accept:
 - The gated test passes on an Apple-silicon Mac, or the step reports it
   as blocked.
 - The ungated suite does not load Metal.
+
+Outcome: the environment is `test/metal/Project.toml`, developing the
+package from `../..` (proposed in step 4). The device agrees with the CPU
+bitwise, on Julia 1.13 and 1.10; the numbers are in `CODE.md`, "On a
+device".
 
 ## Step 5 — Stage arithmetic by owner
 

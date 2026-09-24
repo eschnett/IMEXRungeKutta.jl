@@ -35,8 +35,9 @@ Rules that follow from `CODE.md` and govern every change:
 
 ## Current state
 
-**Steps 0–3 done: scaffolding, the tableaus, the integrator on the
-broadcast path, and the validation** (2026-09-24). `CODE.md` records the requirements, the
+**Steps 0–4 done: scaffolding, the tableaus, the integrator on the
+broadcast path, the validation, and the Metal smoke run; v0.1.0 is
+prepared, and the tag is Erik's** (2026-09-24). `CODE.md` records the requirements, the
 method, the survey of OrdinaryDiffEq and ClimaTimeSteppers, the package
 design, the test plan and the open questions. Two questions are still
 open: where a TreeAMR state vector's ownership partition comes from, and
@@ -72,15 +73,21 @@ into steps 0–6. What exists:
   `test/stiff_tests.jl` (Kaps), `test/ap_tests.jl` (the stiff limit),
   `test/ssp_tests.jl` (total variation) and `test/oracle_tests.jl`
   (OrdinaryDiffEqSDIRK); the numbers are in `CODE.md`, "Validation";
-- `.github/workflows/CI.yml` and `.github/dependabot.yml`, which run once
-  there is a remote;
-- `README.md`, with the worked example.
+- the device smoke run of step 4: `test/metal_tests.jl`, gated by
+  `IMEXRUNGEKUTTA_TEST_METAL=1` and run in its own environment,
+  `test/metal/Project.toml` (Metal, Test, and this package from `../..`);
+  it is not part of `Pkg.test()`, and the ordinary suite checks that it
+  never sees Metal. The numbers are in `CODE.md`, "On a device";
+- `.github/workflows/CI.yml` and `.github/dependabot.yml`;
+- `README.md`, with the CI badge, installation by URL, the worked example
+  and the 0.1.0 status.
 
 **TreeGRRMHD's step 5 may start.** It needs 4b, which is this step 2. It
-adds the package by URL. There is no remote yet, so until there is one
-the URL is this repository's local path,
-`Pkg.add(url = "/Users/eschnett/src/jl/IMEXRungeKutta")`, which tracks
-`main`.
+adds the package by URL, now the remote's,
+`Pkg.add(url = "https://github.com/eschnett/IMEXRungeKutta.jl")`, and,
+once Erik has tagged it, with `rev = "v0.1.0"`. On Metal, each new state
+length costs about a second of kernel compilation in Metal's broadcast
+(`CODE.md`, "On a device"), which a regrid pays.
 
 **TreeGRRMHD's 4c is this step 3.** SSP3(4,3,3) is L-stable (computed
 in step 1), drops from order 3 to 2 in the stiff limit, in the stiff
@@ -88,7 +95,11 @@ component, and ends each step `Δt (1 − bᵀA⁻¹c̃) f = −0.2844 Δt f` of
 equilibrium, which does not accumulate; at a jump of the equilibrium that
 is an overshoot of `0.2844 C` ("Validation" in `CODE.md`).
 
-Step 4, the Metal smoke test and the 0.1.0 release, is next.
+**0.1.0 is prepared, not tagged.** Before the tag: Erik commits his
+`LICENSE.md` (MIT); `main` gets step 4, and the remote's `main`, which
+has steps 0–2, gets steps 3 and 4; and CI is green there. The tag, and
+any registration, are Erik's. Step 5, the stage arithmetic by owner, is
+next.
 
 ## Commands
 
@@ -150,6 +161,27 @@ plain `julia +1.10 --project=. -e 'using IMEXRungeKutta'` after a 1.13
 resolve fails, because PrecompileTools 1.3 (CommonSolve's one dependency)
 requires Julia 1.12. Delete `Manifest.toml` when switching.
 
+**The device smoke run**, on an Apple-silicon Mac, in its own
+environment. Set it up once per Julia version (delete
+`test/metal/Manifest.toml` when switching), then run it:
+
+```bash
+julia --project=test/metal -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+```
+
+```bash
+IMEXRUNGEKUTTA_TEST_METAL=1 julia --project=test/metal test/metal_tests.jl
+```
+
+The same two with `julia +1.10` run it on the floor; both pass (measured
+in step 4, Metal 1.11.1). `Pkg.develop` is needed on 1.10, which ignores
+the environment's `[sources]`, and harmless on 1.11 and later, which read
+it. Without the variable the file does nothing; with it and no functional
+Metal, it fails. The run takes 14 s on 1.13 and 11 s on 1.10; the first
+setup on 1.10 precompiled Metal in 25 s. Never add Metal to the root
+`Project.toml`: every `Pkg.test()`, on Linux too, would then install a
+GPU stack, and `scaffold_tests.jl` refuses it.
+
 The clean-archive check, run before a step is reported done:
 
 ```bash
@@ -192,8 +224,9 @@ EntropyEOS):
 
 ## Repository facts
 
-- No remote yet. Work on a branch, and do not commit,
-  push or merge without being asked.
+- The remote is `origin`, `eschnett/IMEXRungeKutta.jl` on GitHub (from
+  2026-09-24). Work on a branch, and do not commit, push, merge or tag
+  without being asked; pushes, tags and releases are Erik's.
 - `.gitignore` is the siblings':
   `Manifest.toml` everywhere, `/docs/build/`, `/bin/output/`, editor
   leftovers, `TODO.md`.
