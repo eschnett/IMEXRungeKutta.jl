@@ -7,7 +7,8 @@ item is marked **(decided)**, **(proposed)** or **(open)**.
 
 **Status (2026-09-24):** the [package design](#package-design) is
 complete, except where the partition for TreeAMR state vectors comes
-from (open). The implementation plan is `PLAN.md`. Steps 0 and 1, the
+from (open). SSP2(3,3,2)'s coefficients are still to be checked against
+the paper (open). The implementation plan is `PLAN.md`. Steps 0 and 1, the
 scaffolding and the tableaus, are done; step 2, the integrator, is next.
 
 ## Purpose
@@ -240,11 +241,15 @@ reading only, with OrdinaryDiffEqSDIRK 2.9.6
   ARS(2,2,2) agree with both, coefficient for coefficient. ARS(2,2,2)
   also agrees with ARS (1997) §2.6, p. 158: `γ = (2 − √2)/2`,
   `δ = 1 − 1/(2γ)`, explicit weights `(δ, 1 − δ, 0)`.
-- SSP2(3,3,2) is in neither upstream (amended in step 1). Its
-  coefficients are Erik's transcription of Pareschi & Russo (2005).
-  Only the order conditions and the review's symbolic check test them.
-  These give order 2, and `bᵀAc − 1/6 = 1/24` at order 3. It has no
-  oracle.
+- SSP2(3,3,2) is in neither upstream (amended in step 1).
+  - Its coefficients are from the step-1 reviewer's (Claude's)
+    recollection of Pareschi & Russo (2005), not a transcription.
+  - They are verified only by the order conditions, `R(∞) = 0` and the
+    SSP coefficient. These give order 2, `bᵀAc − 1/6 = 1/24` at order 3,
+    `R(∞) = 0` and SSP coefficient 2.
+  - They are not yet checked against the paper, which is not available
+    here (open; see [Open questions](#open-questions)).
+  - It has no oracle.
 - SSP3(4,3,3) (`SSP433`) agrees with both, up to their 14-digit
   `α, β, η`, which are the closed form rounded (a test).
 - **ARS(4,4,3) disagrees in `b̃`.**
@@ -729,8 +734,9 @@ restrictions apply:
   the comparison for ARS(4,4,3) is against a tableau built with upstream's
   `b̃`;
 - SSP2(3,3,2) is in neither upstream, so it has no oracle (amended in
-  step 1). Its coefficients rest on the order conditions and the
-  transcription alone.
+  step 1). Its coefficients, recalled by the step-1 reviewer, rest on the
+  order conditions, `R(∞) = 0` and the SSP coefficient alone, until they
+  are checked against the paper (open).
 
 ### ClimaTimeSteppers (1.0.1)
 
@@ -822,6 +828,10 @@ For the package design:
 
 - Where a TreeAMR state vector's ownership partition comes from
   ([Stage arithmetic](#stage-arithmetic-decided-details-proposed)).
+- Confirm SSP2(3,3,2) against Pareschi & Russo (2005) (open, added in
+  step 1). Its coefficients are the step-1 reviewer's recollection of the
+  paper, verified only by the order conditions, `R(∞) = 0` and the SSP
+  coefficient. See "Cross-checks" under [Tableaus](#tableaus).
 
 Deferred:
 

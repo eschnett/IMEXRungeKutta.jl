@@ -38,8 +38,10 @@ Rules that follow from `CODE.md` and govern every change:
 **Steps 0 and 1 done: scaffolding and the tableaus** (2026-09-24).
 `CODE.md` records the requirements, the method, the survey of
 OrdinaryDiffEq and ClimaTimeSteppers, the package design, the test plan
-and the open questions. One question is still open: where a TreeAMR
-state vector's ownership partition comes from. `PLAN.md` splits the work
+and the open questions. Two questions are still open: where a TreeAMR
+state vector's ownership partition comes from, and whether SSP2(3,3,2)'s
+coefficients, recalled by the step-1 reviewer rather than transcribed,
+match Pareschi & Russo (2005). `PLAN.md` splits the work
 into steps 0–6. What exists:
 - `Project.toml` with CommonSolve as the one run-time dependency, and
   Test, LinearAlgebra and TOML as test-only extras;

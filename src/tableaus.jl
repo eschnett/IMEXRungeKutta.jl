@@ -79,14 +79,19 @@ and all solving, second order, with the diagonal `(1/4, 1/4, 1/3)` and a
 stiffly accurate implicit part. The explicit part is the three-stage
 second-order SSP method (SSP coefficient 2). It is rational, and so held
 exactly as `Rational{BigInt}`. Neither OrdinaryDiffEqSDIRK nor
-ClimaTimeSteppers has it, so it has no oracle. Not to be confused with
+ClimaTimeSteppers has it, so it has no oracle. Its coefficients are from
+the step-1 reviewer's (Claude's) recollection of the paper, verified only
+by the order conditions, `R(∞) = 0` and the SSP coefficient, and not yet
+checked against the paper (open in `CODE.md`). Not to be confused with
 [`IMEXSSP2322`](@ref), SSP2(3,2,2). The measured properties are in
 `CODE.md`, "Tableaus".
 """
 function IMEXSSP2332()
     # Pareschi & Russo (2005), IMEX-SSP2(3,3,2), the stiffly accurate
-    # scheme with three explicit stages. Coefficients as Erik transcribed
-    # them from the paper (2026-09-24); in neither upstream.
+    # scheme with three explicit stages. The coefficients are from the
+    # step-1 reviewer's (Claude's) recollection of the paper, verified only
+    # by the order conditions, R(∞) = 0 and the SSP coefficient, and not
+    # yet checked against the paper; in neither upstream.
     q(x) = Rational{BigInt}(x)
     Ã = q.([0 0 0
             1//2 0 0
