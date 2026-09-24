@@ -48,8 +48,8 @@ recalled by the step-1 reviewer rather than transcribed, match Pareschi &
 Russo (2005). `PLAN.md` splits the work
 into steps 0–6; it is deleted once Erik has confirmed step 6. What exists:
 - `Project.toml` with CommonSolve as the one run-time dependency, and
-  Test, LinearAlgebra, TOML and OrdinaryDiffEqSDIRK (compat `2.9.6`, the
-  oracle) as test-only extras;
+  `test/Project.toml`, the test environment: CommonSolve, LinearAlgebra,
+  OrdinaryDiffEqSDIRK (compat `2.9.6`, the oracle), TOML and Test;
 - `src/IMEXRungeKutta.jl`, the module, which re-exports CommonSolve's
   `init`, `solve`, `solve!` and `step!` and exports `IMEXProblem`,
   `IMEXTableau` and the seven named tableaus;
@@ -152,6 +152,14 @@ julia +1.10 --project=. --threads=4 -e 'using Pkg; Pkg.test(julia_args=["--check
 both versions (measured in step 0). The suite prints the thread count and
 `CHECK_BOUNDS_FORCED` as it starts: check them.
 
+**The test environment is `test/Project.toml`** (since step 6). On 1.10
+and on 1.13, `Pkg.test()` copies it to a temporary environment, keeps its
+`[compat]`, and adds this package itself, so the file does not list it;
+it writes no `test/Manifest.toml` (measured in step 6). A package that the
+tests load by name must be listed there even when this package depends on
+it: without CommonSolve in it, `using CommonSolve` in `scaffold_tests.jl`
+fails with "Package CommonSolve not found".
+
 **The test environment is large** since step 3 added OrdinaryDiffEqSDIRK
 as the oracle: 142 packages on 1.13, 138 on 1.10. Measured on the M3
 (step 3), from a fresh `JULIA_DEPOT_PATH`, so including the downloads:
@@ -195,8 +203,8 @@ the environment's `[sources]`, and harmless on 1.11 and later, which read
 it. Without the variable the file does nothing; with it and no functional
 Metal, it fails. The run takes 14 s on 1.13 and 11 s on 1.10; the first
 setup on 1.10 precompiled Metal in 25 s. Never add Metal to the root
-`Project.toml`: every `Pkg.test()`, on Linux too, would then install a
-GPU stack, and `scaffold_tests.jl` refuses it.
+`Project.toml` or to `test/Project.toml`: every `Pkg.test()`, on Linux
+too, would then install a GPU stack, and `scaffold_tests.jl` refuses it.
 
 The clean-archive check, run before a step is reported done:
 
@@ -240,9 +248,12 @@ EntropyEOS):
   (`CODE.md`, "Stage arithmetic").
 - The only run-time dependency is CommonSolve (which brings
   PrecompileTools and Preferences with it). Test-only dependencies go in
-  `[extras]` and `[targets]`, e.g. OrdinaryDiffEqSDIRK as an oracle.
-  `test/scaffold_tests.jl` asserts the `[deps]` list, so adding one means
-  amending `CODE.md` and that test together.
+  `test/Project.toml`, with their bounds in its `[compat]`, e.g.
+  OrdinaryDiffEqSDIRK as an oracle; the root `Project.toml` has no
+  `[extras]` or `[targets]` (Erik's decision in step 6).
+  `test/scaffold_tests.jl` asserts both files' `[deps]` lists and the root
+  `[compat]`, so adding a dependency of either kind means amending
+  `CODE.md` and that test together.
 - Unicode in mathematical contexts (`Δt`, `u★`, `γ`, `Ã`, `b̃`, `c̃`).
   `ArgumentError`s say *why*.
 - Docstrings are prose-first and point at `CODE.md`, by a section's

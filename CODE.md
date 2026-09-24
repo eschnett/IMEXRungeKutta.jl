@@ -92,9 +92,10 @@ existed:
   2026-09-24; this was "at most StaticArrays", with SciMLBase open). See
   [Dependencies and names](#dependencies-and-names-decided). It brings
   PrecompileTools and Preferences with it (measured in step 0). Heavier
-  packages (OrdinaryDiffEqSDIRK) are test-only. With it, the test
-  environment has 142 packages on Julia 1.13 and 138 on 1.10, standard
-  libraries included (measured in step 3).
+  packages (OrdinaryDiffEqSDIRK) are test-only, in `test/Project.toml`
+  (amended in step 6; [File layout](#file-layout-decided)). With it, the
+  test environment has 142 packages on Julia 1.13 and 138 on 1.10,
+  standard libraries included (measured in step 3).
 
 ## The method
 
@@ -1061,12 +1062,29 @@ touch, pinned and interleaved, and unpinned.
   `bench/symmetry_affinity.sh` (proposed in step 5). They run in the
   package's own environment (`--project=.`), with only the standard
   library's `Printf` besides.
-- Test-only dependencies are `[extras]` and `[targets]` in the root
-  `Project.toml`, not a `test/Project.toml` (proposed in step 0). That
-  is what `PLAN.md` specifies, and it keeps one file to read for the
-  whole dependency picture. TOML is among them, for the `[deps]` check,
-  and OrdinaryDiffEqSDIRK, for the oracle, with a `[compat]` bound
-  (amended in step 3; [The oracle](#the-oracle)).
+- Test-only dependencies are in `test/Project.toml`, with its own
+  `[compat]` (amended in step 6: Erik moved test-only dependencies to
+  test/Project.toml). Step 0 had proposed `[extras]` and `[targets]` in
+  the root `Project.toml`, which now holds only `[deps]` CommonSolve and
+  its `[compat]` for CommonSolve and `julia`.
+  - Its `[deps]` are CommonSolve, LinearAlgebra, OrdinaryDiffEqSDIRK,
+    TOML and Test. TOML is there for the project-file checks, and
+    OrdinaryDiffEqSDIRK for the oracle, with the `[compat]` bound
+    `"2.9.6"` ([The oracle](#the-oracle)). CommonSolve is there because
+    the tests load it by name, which a dependency of the package alone
+    does not allow (measured in step 6: without it, `scaffold_tests.jl`
+    fails with "Package CommonSolve not found"). Its bound is the root
+    `[compat]`'s, which the resolver applies through this package.
+  - This package is not listed (measured in step 6). On Julia 1.10 and
+    1.13 alike, `Pkg.test()` copies `test/Project.toml` to a temporary
+    environment, keeps its `[compat]`, and adds this package to its
+    `[deps]`, by path: both record the path in the manifest, and 1.13
+    also writes a `[sources]` entry. It writes no `test/Manifest.toml`.
+  - `scaffold_tests.jl` checks both files: the root has no `[extras]`,
+    `[targets]`, `[weakdeps]` or `[sources]`; `test/Project.toml` has
+    exactly those five, the one bound and no `[sources]`; and under
+    `Pkg.test()` the active environment is that file's copy with this
+    package added.
 - The one exception is the device smoke run (proposed in step 4):
   `test/metal_tests.jl` runs in `test/metal/Project.toml`, whose
   dependencies are Metal, Test and this package, developed from `../..`.
@@ -1459,7 +1477,7 @@ real components, `Lu` implicit. Upstream is OrdinaryDiffEqSDIRK 2.9.6.
   closed form by 4.9e−16, and from upstream by 1.9e−16.
 - Our own ARS(4,4,3), the paper's, differs from upstream's by 2.5e−5 over
   the ten steps ("Cross-checks").
-- The test environment adds OrdinaryDiffEqSDIRK with the compat bound
+- `test/Project.toml` adds OrdinaryDiffEqSDIRK with the compat bound
   `"2.9.6"`, that is `[2.9.6, 3)` (proposed in step 3). A release that
   fixes #4620 turns the two `@test_broken` into unexpected passes, which
   fail the suite, and so is noticed.
@@ -1491,15 +1509,17 @@ it, a Metal that is not functional fails the run: the run was asked for.
 `runtests.jl` does not include the file.
 
 **The ordinary suite never sees Metal** (tests, in `scaffold_tests.jl`
-and at the end of `runtests.jl`): Metal is in none of the root
-`Project.toml`'s `[deps]`, `[weakdeps]`, `[extras]` or test target; it is
-not in the resolved test environment's manifest; under `Pkg.test()`, whose
-load path is that environment alone, `Base.find_package("Metal")` is
-`nothing` (Erik's global environment has Metal, so a plain
-`julia --project=.` run would find it there, and the check is skipped
-when the load path includes `@v#.#`); and after the last file no loaded
-module is Metal. A test also checks that `test/metal/Project.toml` names
-this package's UUID and points at this checkout.
+and at the end of `runtests.jl`): Metal is in none of the `[deps]`,
+`[weakdeps]` or `[extras]` of the root `Project.toml` and of
+`test/Project.toml` (amended in step 6, when the test environment moved
+there); it is not in the resolved test environment's manifest; under
+`Pkg.test()`, whose load path is that environment alone,
+`Base.find_package("Metal")` is `nothing` (Erik's global environment has
+Metal, so a plain `julia --project=.` run would find it there, and the
+check is skipped when the load path includes `@v#.#`); and after the last
+file no loaded module is Metal. A test also checks that
+`test/metal/Project.toml` names this package's UUID and points at this
+checkout.
 
 **The run.** `u′ = cos t − κu − (u − ū)/ε` in 4096 cells, `κ = 1/2`,
 `ū = 1 + x`, `u(0) = ū + sin 2πx` and `ε = 10^{−3+3x}` for

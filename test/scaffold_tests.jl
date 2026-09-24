@@ -46,11 +46,43 @@ end
 
 # A run-time dependency added without amending "Requirements" in `CODE.md`,
 # or a compat floor above Julia 1.10, would reach every downstream silently.
+# A test-only dependency back in the root `Project.toml`'s `[extras]`, or
+# its bound in the root `[compat]`, would split the test environment over
+# two files again ("File layout" in `CODE.md`).
 @testset "The run-time dependencies are CommonSolve alone, on Julia 1.10" begin
     project = TOML.parsefile(joinpath(pkgdir(IMEXRungeKutta), "Project.toml"))
     @test sort(collect(keys(project["deps"]))) == ["CommonSolve"]
+    @test sort(collect(keys(project["compat"]))) == ["CommonSolve", "julia"]
     @test project["compat"]["julia"] == "1.10"
-    @test !haskey(project, "sources")
+    for section in ("sources", "extras", "targets", "weakdeps")
+        @test !haskey(project, section)
+    end
+end
+
+# The test environment is `test/Project.toml` (decided by Erik in step 6,
+# "File layout" in `CODE.md`). A dependency missing from it fails a file
+# far from here; the oracle without its bound could resolve to a release
+# whose tableaus or #4620 behaviour the recorded numbers do not describe.
+# `Pkg.test()` adds this package to the environment itself, on 1.10 and
+# on 1.13, so the file does not list it. CommonSolve is listed because the
+# tests load it by name, which the package's own dependency does not
+# allow; its bound is the root `[compat]`'s, through this package.
+@testset "The test-only dependencies are test/Project.toml's, the oracle bounded" begin
+    test_deps = ["CommonSolve", "LinearAlgebra", "OrdinaryDiffEqSDIRK", "TOML", "Test"]
+    root = pkgdir(IMEXRungeKutta)
+    test_project = TOML.parsefile(joinpath(root, "test", "Project.toml"))
+    @test sort(collect(keys(test_project["deps"]))) == test_deps
+    @test test_project["compat"] == Dict("OrdinaryDiffEqSDIRK" => "2.9.6")
+    @test !haskey(test_project, "sources")
+    # Under `Pkg.test()` the active project is a copy of that file with
+    # this package added, and its `[compat]` kept. The load path's
+    # `@v#.#` marks a plain `julia --project=.` run instead.
+    if "@v#.#" ∉ LOAD_PATH
+        active = TOML.parsefile(Base.active_project())
+        @test sort(collect(keys(active["deps"]))) ==
+              sort([test_deps; "IMEXRungeKutta"])
+        @test active["compat"]["OrdinaryDiffEqSDIRK"] == "2.9.6"
+    end
 end
 
 # Metal in the package's test environment would download and precompile a
@@ -61,11 +93,13 @@ end
 # `find_package` then answers for it; under a plain `julia --project=.` it
 # would also search the global environment, which may well have Metal.
 @testset "Metal is not in the ordinary test environment" begin
-    project = TOML.parsefile(joinpath(pkgdir(IMEXRungeKutta), "Project.toml"))
-    for section in ("deps", "weakdeps", "extras")
-        @test !haskey(get(project, section, Dict()), "Metal")
+    root = pkgdir(IMEXRungeKutta)
+    for file in (joinpath(root, "Project.toml"), joinpath(root, "test", "Project.toml"))
+        project = TOML.parsefile(file)
+        for section in ("deps", "weakdeps", "extras")
+            @test !haskey(get(project, section, Dict()), "Metal")
+        end
     end
-    @test "Metal" ∉ project["targets"]["test"]
     manifest = Base.project_file_manifest_path(Base.active_project())
     @test manifest !== nothing
     manifest === nothing || @test !haskey(TOML.parsefile(manifest)["deps"], "Metal")
