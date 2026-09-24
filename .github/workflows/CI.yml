@@ -4,9 +4,13 @@ on:
   push:
     branches: [main]
     tags: ["*"]
-    # A Markdown-only change cannot move a measured number.
-    paths-ignore:
-      - "**.md"
+    # A change to the other Markdown files cannot move a measured number,
+    # but README.md's `julia` block is run by test/readme_tests.jl, so a
+    # README-only change is tested. Later patterns override earlier ones.
+    paths:
+      - "**"
+      - "!**.md"
+      - "README.md"
   pull_request:
   workflow_dispatch:
 
@@ -18,8 +22,11 @@ jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.threads || 1 }} thread(s) - check-bounds=${{ matrix.check_bounds || 'auto' }}
     runs-on: ${{ matrix.os }}
-    # A guard against a runtime regression, not a budget. PLAN.md asks for
-    # a suite under about 5 minutes at one thread; step 0's takes seconds.
+    # A guard against a hang, not a budget. On a cold cache the test
+    # environment precompiles for about two minutes (the oracle,
+    # OrdinaryDiffEqSDIRK), and the suite takes about one at one thread;
+    # the bounds-checked cell precompiles again and runs slower ("Commands"
+    # in CLAUDE.md).
     timeout-minutes: 30
     strategy:
       fail-fast: false
