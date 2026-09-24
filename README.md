@@ -34,7 +34,10 @@ package design, why an existing package does not fit, and the test plan.
 
 ## Status
 
-**Scaffolding only.** The module loads and re-exports CommonSolve's four
-names; nothing else exists yet. `PLAN.md` breaks the implementation into
-steps: the tableaus next, then the integrator, its validation, and a
-0.1.0 release. There is no worked example until the integrator exists.
+**The tableaus exist; the integrator does not yet.** `IMEXTableau` and
+the six named tableaus (`IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP3332`,
+`IMEXSSP3433`, `ARS222`, `ARS443`) are in place. Their order, stiff
+accuracy, L-stability and SSP coefficient are computed and tested, and
+recorded in `CODE.md`. `PLAN.md` breaks the rest into steps: the
+integrator next, then its validation, and a 0.1.0 release. There is no
+worked example until the integrator exists.

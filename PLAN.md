@@ -7,7 +7,7 @@ it says what changes, what must not change, and what must be measured
 and recorded. `CLAUDE.md` has the mechanics. Delete this file when the
 last step is marked *(Done.)*.
 
-**Step 0 is done. Step 1 is next.**
+**Steps 0 and 1 are done. Step 2 is next.**
 
 Each step ends in a green suite and a `CODE.md` update, and each is a
 brief that a single session can carry. The steps are in dependency
@@ -139,6 +139,9 @@ This is TreeGRRMHD's pattern.
   - Upstream's state must be real.
   - Upstream's SSP3(4,3,3) uses the 14-digit coefficients, which differ
     from the closed form by about 1e−15.
+  - Upstream's `ARS443` has `b̃ = b`, not the last row of `Ã` (measured in
+    step 1). Compare ARS(4,4,3) with `IMEXTableau("…", Ã, b, A, b)`, built
+    from `ARS443()`'s parts.
 - **Type instability is confined to `init`.** The stage plan's type
   depends on the tableau's nonzero pattern. `step!` must be inferred
   (`@inferred`) and allocation-free.
@@ -181,7 +184,7 @@ Accept:
   four threads.
 - A clean `git archive HEAD` instantiates and passes.
 
-## Step 1 — The tableaus (TreeGRRMHD 4a)
+## Step 1 — The tableaus (TreeGRRMHD 4a) *(Done, 2026-09-24.)*
 
 `CODE.md`: "Tableaus", "Tableaus are values", "Testing" (Tableaus).
 

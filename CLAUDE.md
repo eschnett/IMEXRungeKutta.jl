@@ -35,23 +35,34 @@ Rules that follow from `CODE.md` and govern every change:
 
 ## Current state
 
-**Step 0 done: scaffolding** (2026-09-24). `CODE.md` records the
-requirements, the method, the survey of OrdinaryDiffEq and
-ClimaTimeSteppers, the package design, the test plan and the open
-questions. One question is still open: where a TreeAMR state vector's
-ownership partition comes from. `PLAN.md` splits the work into steps
-0–6. What exists:
+**Steps 0 and 1 done: scaffolding and the tableaus** (2026-09-24).
+`CODE.md` records the requirements, the method, the survey of
+OrdinaryDiffEq and ClimaTimeSteppers, the package design, the test plan
+and the open questions. One question is still open: where a TreeAMR
+state vector's ownership partition comes from. `PLAN.md` splits the work
+into steps 0–6. What exists:
 - `Project.toml` with CommonSolve as the one run-time dependency, and
   Test, LinearAlgebra and TOML as test-only extras;
-- `src/IMEXRungeKutta.jl`, the module shell, which re-exports
-  CommonSolve's `init`, `solve`, `solve!` and `step!` and has no methods
-  of its own yet;
-- `test/runtests.jl` and `test/scaffold_tests.jl`;
+- `src/IMEXRungeKutta.jl`, the module, which re-exports CommonSolve's
+  `init`, `solve`, `solve!` and `step!` (no methods yet) and exports
+  `IMEXTableau` and the six named tableaus;
+- `src/tableau.jl`: `IMEXTableau{R}`, its checks, and the internals step
+  2's plan reads: `solves`, `explicit_used`, `implicit_used`,
+  `scratch_count` and `coefficients(T, Tt, tab)`;
+- `src/tableaus.jl`: `IMEXSSP222`, `IMEXSSP2322` (SSP2(3,2,2)),
+  `IMEXSSP3332`, `IMEXSSP3433`, `ARS222` and `ARS443`, in closed form;
+- `test/runtests.jl`, `test/scaffold_tests.jl`,
+  `test/tableau_properties.jl` (test-only helpers: order conditions,
+  `R(z)`, the E-polynomial, the SSP coefficient) and
+  `test/tableau_tests.jl`;
 - `.github/workflows/CI.yml` and `.github/dependabot.yml`, which run once
   there is a remote;
 - `README.md`.
 
-Step 1, the tableaus, is next.
+Step 2, the integrator, is next. `CODE.md` ("Tableaus", "Measured
+properties") has each tableau's patterns and scratch count, which the
+stage plan must reproduce. Upstream's `ARS443` differs from ours in `b̃`
+("Cross-checks"), which step 3's oracle test must allow for.
 
 ## Commands
 

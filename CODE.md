@@ -7,8 +7,8 @@ item is marked **(decided)**, **(proposed)** or **(open)**.
 
 **Status (2026-09-24):** the [package design](#package-design) is
 complete, except where the partition for TreeAMR state vectors comes
-from (open). The implementation plan is `PLAN.md`. Step 0, the
-scaffolding, is done; step 1, the tableaus, is next.
+from (open). The implementation plan is `PLAN.md`. Steps 0 and 1, the
+scaffolding and the tableaus, are done; step 2, the integrator, is next.
 
 ## Purpose
 
@@ -53,10 +53,20 @@ existed:
   `U = u★ + γΔt g(U, t)`, computed by any means. The integrator recovers
   the implicit tendency as `k = (U − u★)/(γΔt)`. So no separate
   evaluation of `g` exists or is needed.
-- **The tableaus:** SSP2(2,2,2), SSP2(3,3,2), SSP3(3,3,2) and SSP3(4,3,3)
+- **The tableaus:** SSP2(2,2,2), SSP2(3,2,2), SSP3(3,3,2) and SSP3(4,3,3)
   (Pareschi & Russo 2005), and ARS(2,2,2) and ARS(4,4,3) (Ascher, Ruuth &
   Spiteri 1997). SSP3(4,3,3) is the intended production scheme, and
   SSP2(2,2,2) the debugging one.
+  - This said SSP2(3,3,2) (amended in step 1). The name decided for it,
+    `IMEXSSP2322`, is SSPk(s,σ,p) = SSP2(3,2,2) by the naming rule in
+    [Tableaus are values](#tableaus-are-values-decided). Both upstreams
+    implement SSP2(3,2,2) under that name (OrdinaryDiffEqSDIRK's
+    `IMEXSSP2322`, ClimaTimeSteppers' `SSP322`). So that is the one here
+    (proposed in step 1).
+  - If the requirement meant a scheme of the paper's that is really
+    named SSP2(3,3,2), that one is not included. Neither upstream
+    implements one, and without the paper at hand its coefficients could
+    not be checked.
 - **A stage limiter hook** and a step limiter hook. These are
   positivity- or atmosphere-type resets of the state, as in the SSPRK
   methods of OrdinaryDiffEqSSPRK.
@@ -102,7 +112,8 @@ this. ESDIRK-type additive schemes (KenCarp and the like) do not, since
 their first column needs `g(uⁿ)`. The tableau constructor checks it and
 throws an `ArgumentError` that says why.
 
-**Exact coefficients.** Only SSP2(3,3,2) and ARS(4,4,3) are rational.
+**Exact coefficients.** Only SSP2(3,2,2) and ARS(4,4,3) are rational
+(SSP2(3,3,2) before, amended in step 1).
 SSP2(2,2,2), SSP3(3,3,2) and ARS(2,2,2) involve `√2`, in closed form
 (`γ = 1 − 1/√2`, and so on). SSP3(4,3,3)'s `α, β, η` are printed to 14
 digits only (α = 0.24169426078821, β = 0.06042356519705,
@@ -120,6 +131,10 @@ the explicit part and `b = b̃ = (0, 1/6, 1/6, 2/3)` fixed:
   **`α = (9 − √57)/6`** = 0.24169426078820838…
 - The printed digits are these values rounded to 14 digits. Upstream's
   truncated coefficients leave order-condition residuals of about 2e−15.
+  Measured in step 1, with the printed digits held as exact decimals, the
+  largest is 2.07e−15, in `bᵀAc` and `b̃ᵀAc`. The only other misses are
+  1.67e−15, in `bᵀAc̃` and `b̃ᵀAc̃`. Truncation also leaves
+  `R(∞) = 3.1e−13`, not 0.
 
 So every tableau here has a closed form. **(decided):**
 - the rational ones are held exactly, as `Rational{BigInt}`;
@@ -137,8 +152,103 @@ SSP3(4,3,3) is **not** stiffly accurate: `b = (0, 1/6, 1/6, 2/3)`, while
 the last row of `A` is `(β, η, 1/2 − β − η − α, α)`. So its order may
 drop in the stiff limit, and the ARS schemes, which are stiffly accurate,
 are the alternative if that matters. Its parameters are exactly those
-that make `R(∞) = 0` (above). Whether the implicit part is also A-stable,
-and so L-stable, is computed. Everything else is computed, not quoted.
+that make `R(∞) = 0` (above). Its implicit part is also A-stable, and so
+L-stable. That is computed, not quoted (measured in step 1): all three
+nonzero coefficients of its E-polynomial are positive (below).
+Everything else is computed, not quoted.
+
+**Measured properties** (measured in step 1). These are computed by
+`test/tableau_properties.jl` and asserted by `test/tableau_tests.jl`:
+- *order*: every additive order condition up to that order holds, and
+  some condition of the next order misses by the amount given;
+- *stiffly accurate*: `b` is the last row of `A` (implicit), and `b̃` is
+  the last row of `Ã` (explicit);
+- *A-stable*: every pole `1/a_kk` of `R(z) = 1 + z bᵀ(I − zA)⁻¹𝟙` is in
+  the right half-plane, and `E(y) = |Q(iy)|² − |P(iy)|² ≥ 0`;
+- *SSP*: the SSP coefficient of the explicit part, by bisection on
+  Kraaijevanger's conditions for `K = [Ã 0; b̃ᵀ 0]`, to 1e−10;
+- the patterns, as the stages `k` where they hold. The scratch count is
+  that of [The stage plan and storage](#the-stage-plan-and-storage-decided).
+
+| | SSP2(2,2,2) | SSP2(3,2,2) | SSP3(3,3,2) | SSP3(4,3,3) | ARS(2,2,2) | ARS(4,4,3) |
+|---|---|---|---|---|---|---|
+| held as | BigFloat | rational | BigFloat | BigFloat | BigFloat | rational |
+| order | 2 | 2 | 2 | 3 | 2 | 3 |
+| worst residual up to it | 0 | 0 (exact) | 0 | 0 | 8.6e−78 | 0 (exact) |
+| next order misses by | 0.167 | 0.167 | 0.069 | 0.083 | 0.187 | 0.097 |
+| stiffly accurate, implicit / explicit | no / no | yes / no | no / no | no / no | yes / yes | yes / yes |
+| `R(∞)` | 1.0e−76 | 0 (exact) | 8.6e−77 | −2.4e−76 | 0 | 0 (exact) |
+| A-stable | yes | yes | yes | yes | yes | yes |
+| so L-stable | yes | yes | yes | yes | yes | yes |
+| SSP coefficient | 1 | 1 | 1 | 1 | 0 | 0 |
+| solves (`a_kk ≠ 0`) | 1, 2 | 1–3 | 1–3 | 1–4 | 2, 3 | 2–5 |
+| explicit-used | 1, 2 | 2, 3 | 1–3 | 2–4 | 1, 2 | 1–4 |
+| implicit-used | 1, 2 | 1–3 | 1–3 | 1–4 | 2, 3 | 2–5 |
+| scratch arrays | 5 | 6 | 7 | 8 | 5 | 9 |
+
+The residuals and `R(∞)` of the BigFloat tableaus are 256-bit
+round-off. The next-order miss is at order 3 for the second-order
+schemes. For the third-order ones it is in a classical order-4
+condition of one part.
+
+The E-polynomials, in `y`. Every coefficient is non-negative, which is
+sufficient for `E ≥ 0`, and the diagonals are positive. The test helper
+refuses to decide a tableau with a negative coefficient, rather than pass
+it (proposed in step 1):
+- SSP2(2,2,2) and ARS(2,2,2): `γ⁴y⁴` (= 0.00736 y⁴), with
+  `γ = 1 − 1/√2`. Both implicit parts have the same `R`.
+- SSP2(3,2,2): `y⁴/8 + y⁶/64`.
+- SSP3(3,3,2): `0.00736 y⁴ + 0.000631 y⁶`.
+- SSP3(4,3,3): `0.00545 y⁴ + 0.000282 y⁶ + α⁸y⁸` (α⁸ = 1.16e−5).
+- ARS(4,4,3): `y⁴/24 + 5y⁶/144 + y⁸/256`.
+
+In each, the `y²` coefficient vanishes, as order 2 requires: exactly
+for the rational tableaus, and to 256-bit round-off (about 1e−77) for
+the others.
+
+The explicit parts of the IMEX-SSP schemes are Heun's method and the
+three-stage SSPRK(3,3) of Shu & Osher. Their SSP coefficient is the
+optimal 1. The ARS explicit parts have negative coefficients, and so
+coefficient 0: `δ = −1/√2` in ARS(2,2,2), and `ã₄₂ = −5/6` and
+`ã₅₄ = b̃₄ = −7/4` in ARS(4,4,3).
+Step 3 measures what that means for TVD advection.
+
+**What the order conditions do not see** (measured in step 1). The
+order conditions are the independent check of every transcription. A
+test perturbs each coefficient that may be nonzero, one at a time, by
+1e−3. Each perturbation breaks an order condition up to the stated
+order, or `R(∞) = 0`, or is refused by the constructor, with one
+exception. Two coefficients escape the order conditions alone:
+- SSP3(4,3,3)'s `a₁₁ = α` is pinned only by `R(∞) = 0`.
+- SSP2(3,2,2)'s `a₁₁ = 1/2` is the exception, pinned by nothing
+  computed. With `b₁ = b̃₁ = 0` it enters only `Ac`, an order-3 term.
+  Stiff accuracy makes `R(∞) = 0` whatever it is. It is asserted
+  directly, as the common diagonal 1/2 that both upstreams have.
+
+**Cross-checks** (measured in step 1). Each tableau was compared, by
+reading only, with OrdinaryDiffEqSDIRK 2.9.6
+(`src/imex_tableaus.jl`) and ClimaTimeSteppers (`main`,
+`src/solvers/imex_tableaus.jl`, fetched 2026-09-24). The papers were not
+at hand. Where the citations in `src/tableaus.jl` give a table number,
+it is OrdinaryDiffEqSDIRK's, and they say so.
+- SSP2(2,2,2), SSP2(3,2,2) (`SSP322` there), SSP3(3,3,2) (`SSP332`) and
+  ARS(2,2,2) agree with both, coefficient for coefficient.
+- SSP3(4,3,3) (`SSP433`) agrees with both, up to their 14-digit
+  `α, β, η`, which are the closed form rounded (a test).
+- **ARS(4,4,3) disagrees in `b̃`.** ClimaTimeSteppers takes `b̃` as the
+  last row of `Ã`, `(1/4, 7/4, 3/4, −7/4, 0)`, so the explicit part is
+  stiffly accurate and uses four stages, the "4 explicit stages" of the
+  name. OrdinaryDiffEqSDIRK has `b̃ = b = (0, 3/2, −3/2, 1/2, 1/2)`.
+  - That is also third order, exactly, and it misses the classical
+    order-4 conditions by up to 0.076 (a test).
+  - But it reads the explicit tendency of stage 5, so it makes five
+    explicit evaluations per step, not four.
+  - Here `b̃` is the last row of `Ã`, as in ClimaTimeSteppers and as
+    the name requires (proposed in step 1). It should be confirmed
+    against the paper, §2.8.
+  - Step 3's oracle comparison of ARS(4,4,3) must therefore compare with
+    `IMEXTableau("…", Ã, b, A, b)`, built from `ARS443()`'s parts, not
+    with `ARS443()`.
 
 ### One step (decided)
 
@@ -369,6 +479,42 @@ step limiter, `integ.u` is undefined.
 - **Properties are computed in the tests.** The order conditions,
   L-stability and the SSP coefficient are not package API.
 
+What step 1 settled (proposed in step 1):
+- **The fields** are `name`, `Ã`, `b̃`, `A`, `b`, `c̃` and `c`.
+  - The names are Pareschi–Russo's and ARS's, `"SSP3(4,3,3)"` and
+    `"ARS(4,4,3)"`.
+  - `c̃` and `c` are the row sums of the stored coefficients, taken in
+    `R`: exact for a rational tableau, and one 256-bit rounding
+    otherwise. For SSP3(4,3,3) they come out exactly `(0, 0, 1, 1/2)`
+    and `(α, 0, 1, 1/2)`.
+- **`R` follows the input.** If every coefficient given is an integer or
+  a rational, `R = Rational{BigInt}`. Otherwise `R` is 256-bit
+  `BigFloat`, which holds a `Float64` exactly. `IMEXTableau{R}(…)`
+  chooses explicitly.
+- **Two more refusals:** a tableau with no stages, and a coefficient
+  that is not finite.
+- **`IMEXTableau` is exported** beside the six names, for a caller's own
+  tableau.
+- **Internal functions for step 2's plan**, in `src/tableau.jl`:
+  - `nstages`, and the per-stage patterns `solves`, `explicit_used` and
+    `implicit_used`, as `Vector{Bool}`;
+  - `scratch_count`, the count of
+    [The stage plan and storage](#the-stage-plan-and-storage-decided);
+  - `coefficients(T, Tt, tab)`, the named tuple
+    `(; Ã, b̃, γ, Ā, b̄, c̃, c)`.
+- **What `coefficients` holds.**
+  - `γ` is the diagonal `a_kk`.
+  - `Ā` holds `a_kj/a_jj` for `j < k` and `a_jj ≠ 0`, and `b̄` holds
+    `b_j/a_jj`. Both are zero elsewhere.
+  - The coefficients are converted to `T` and the abscissae to the time
+    type `Tt`.
+  - Each value is formed in `R`, rounded to 256 bits and converted once,
+    so it is the correctly rounded 256-bit value (a test, in `Float32`,
+    `Float64` and `BigFloat`).
+  - For `T = BigFloat` it has 256 bits, whatever the global precision.
+    A state at a higher `BigFloat` precision therefore gets coefficients
+    good to about 1e−77, not to its own precision.
+
 Values suffice because the stage plan below gives the compiler the
 tableau's structure anyway. This resolves "values or types".
 
@@ -488,7 +634,9 @@ can come in a later step without changing the interface.
   `test/runtests.jl` includes them into one `@testset`;
   `test/scaffold_tests.jl` checks that the package loads, that its four
   names are CommonSolve's bindings, and that `[deps]` is CommonSolve
-  alone (amended in step 0).
+  alone (amended in step 0). `test/tableau_properties.jl` holds the
+  test-only tableau properties, and `test/tableau_tests.jl` asserts them
+  (amended in step 1).
 - Test-only dependencies are `[extras]` and `[targets]` in the root
   `Project.toml`, not a `test/Project.toml` (proposed in step 0). That
   is what `PLAN.md` specifies, and it keeps one file to read for the
@@ -555,7 +703,11 @@ reference step to 1e−16 on a linear problem with default settings. Two
 restrictions apply:
 - the state must be real (its default AD Jacobian rejects a complex
   state);
-- `f` must not depend on `t`, until #4620 is fixed.
+- `f` must not depend on `t`, until #4620 is fixed;
+- its `ARS443` has `b̃ = b`, where this package has the last row of `Ã`
+  (amended in step 1; see "Cross-checks" under [Tableaus](#tableaus)). So
+  the comparison for ARS(4,4,3) is against a tableau built with upstream's
+  `b̃`.
 
 ### ClimaTimeSteppers (1.0.1)
 
@@ -588,7 +740,15 @@ failure mode it guards.
     rational forms and to a tiny residual in `BigFloat` for the others;
   - the triangularity and admissibility are as stated;
   - the recorded properties (stiff accuracy, L-stability, SSP
-    coefficient) are regression-tested.
+    coefficient) are regression-tested;
+  - also (amended in step 1):
+    - a perturbation of any one coefficient fails a check, except the
+      one coefficient named in "What the order conditions do not see";
+    - the closed forms are the derived values;
+    - the tableaus and their converted coefficients do not depend on the
+      global `BigFloat` precision;
+    - the 14 printed digits of SSP3(4,3,3) are the closed form rounded;
+    - upstream's ARS(4,4,3) variant is third order too.
 - **Mechanics:**
   - `step!` is allocation-free after warm-up;
   - `solve_imp!` is called once per implicit stage, with the documented
