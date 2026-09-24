@@ -7,8 +7,8 @@ item is marked **(decided)**, **(proposed)** or **(open)**.
 
 **Status (2026-09-24):** the [package design](#package-design) is
 complete, except where the partition for TreeAMR state vectors comes
-from (open). The implementation plan is `PLAN.md` (drafted); step 0 is
-next.
+from (open). The implementation plan is `PLAN.md`. Step 0, the
+scaffolding, is done; step 1, the tableaus, is next.
 
 ## Purpose
 
@@ -71,7 +71,8 @@ existed:
   work).
 - **Minimal dependencies.** Only CommonSolve at run time (amended
   2026-09-24; this was "at most StaticArrays", with SciMLBase open). See
-  [Dependencies and names](#dependencies-and-names-decided). Heavier
+  [Dependencies and names](#dependencies-and-names-decided). It brings
+  PrecompileTools and Preferences with it (measured in step 0). Heavier
   packages (OrdinaryDiffEqSDIRK) are test-only.
 
 ## The method
@@ -223,10 +224,25 @@ Drafted and reviewed 2026-09-24. The first caller is TreeGRRMHD, whose `CODE.md`
 ### Dependencies and names (decided)
 
 The package depends on **CommonSolve.jl** only, and adds methods to its
-`init`, `solve!`, `step!` and `solve`. CommonSolve has no dependencies.
-SciMLBase and OrdinaryDiffEq re-export these same functions, so this
-package can be loaded beside them without a name clash. StaticArrays is
-not needed. This amends the "at most StaticArrays" requirement.
+`init`, `solve!`, `step!` and `solve`. SciMLBase and OrdinaryDiffEq
+re-export these same functions, so this package can be loaded beside them
+without a name clash. StaticArrays is not needed. This amends the "at
+most StaticArrays" requirement.
+
+**CommonSolve's own dependencies** (measured in step 0). This section
+said CommonSolve has none. That held up to 0.2.13. From 0.2.14, the
+current version on 2026-09-24, it depends on PrecompileTools, which
+depends on Preferences (and the TOML standard library). Both are small
+and are already in almost every Julia environment. PrecompileTools
+1.3 requires Julia 1.12, so on 1.10 the resolver picks 1.2.1; the suite
+passes with both. The requirement stands: one direct dependency.
+
+**The compat bound** (proposed in step 0) is `CommonSolve = "0.2.14"`,
+that is `[0.2.14, 0.3)`: the current 0.2 series, from the one version
+the suite has run against. A cap below 0.2.14 would avoid the two
+transitive packages, but it would hold every environment that loads this
+package back from CommonSolve's later releases. SciMLBase 3.56 bounds
+CommonSolve by `0.2.4 - 0.2`, so either choice resolves beside it.
 
 The alternatives, not taken:
 - **Own the names.** They clash with DifferentialEquations when both are
@@ -469,6 +485,21 @@ can come in a later step without changing the interface.
 - `src/lincomb.jl`: fused linear combinations, broadcast and threaded.
 - `src/integrator.jl`: `IMEXProblem`, `init`, `step!` and `solve!`.
 - `test/`: one file per group under [Testing](#testing-decided).
+  `test/runtests.jl` includes them into one `@testset`;
+  `test/scaffold_tests.jl` checks that the package loads, that its four
+  names are CommonSolve's bindings, and that `[deps]` is CommonSolve
+  alone (amended in step 0).
+- Test-only dependencies are `[extras]` and `[targets]` in the root
+  `Project.toml`, not a `test/Project.toml` (proposed in step 0). That
+  is what `PLAN.md` specifies, and it keeps one file to read for the
+  whole dependency picture. TOML is among them, for the `[deps]` check.
+- `.github/workflows/CI.yml` (proposed in step 0) has four cells: Julia
+  1.10 on Linux; the current release on Linux, with
+  `--check-bounds=yes` and coverage; the current release on macOS; and
+  the current release on Linux at four threads. Every cell but the
+  bounds-checked one runs with `--check-bounds=auto`, so that the
+  allocation tests run on the floor and at four threads.
+  `julia-runtest`'s default, `yes`, would skip them in every cell.
 
 ### Documentation (decided)
 

@@ -7,8 +7,7 @@ it says what changes, what must not change, and what must be measured
 and recorded. `CLAUDE.md` has the mechanics. Delete this file when the
 last step is marked *(Done.)*.
 
-**No step is done yet. Step 0 is next.** It starts once the design branch
-(`claude/code-md-design-62a7e9`) is on `main`.
+**Step 0 is done. Step 1 is next.**
 
 Each step ends in a green suite and a `CODE.md` update, and each is a
 brief that a single session can carry. The steps are in dependency
@@ -146,10 +145,15 @@ This is TreeGRRMHD's pattern.
 - **Allocation tests** go through a top-level helper that takes concrete
   arguments, never a closure inside a `@testset`, which allocates
   itself. They are skipped under `--check-bounds=yes`.
+  - On Julia 1.10, `Pkg.test()` forces `--check-bounds=yes` whatever
+    the parent was started with (measured in step 0). Run the floor with
+    `Pkg.test(julia_args=["--check-bounds=auto"])`, as in `CLAUDE.md`, or
+    the allocation tests never run there. `CHECK_BOUNDS_FORCED` in
+    `test/runtests.jl` is the flag to skip on.
 - **Mocks** record their calls into preallocated buffers in `p`, so the
   mechanics tests can also run under the allocation helper.
 
-## Step 0 — Scaffolding
+## Step 0 — Scaffolding *(Done, 2026-09-24.)*
 
 `CODE.md`: "Requirements", "Dependencies and names", "File layout".
 

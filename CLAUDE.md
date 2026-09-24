@@ -35,17 +35,28 @@ Rules that follow from `CODE.md` and govern every change:
 
 ## Current state
 
-**Design complete** (2026-09-24). `CODE.md` records the requirements,
-the method, the survey of OrdinaryDiffEq and ClimaTimeSteppers, the
-package design, the test plan and the open questions. One question is
-still open: where a TreeAMR state vector's ownership partition comes from.
-`src/` is still the Pkg template. `PLAN.md` (drafted, under review)
-splits the work into steps 0–6; write no code before it is agreed.
+**Step 0 done: scaffolding** (2026-09-24). `CODE.md` records the
+requirements, the method, the survey of OrdinaryDiffEq and
+ClimaTimeSteppers, the package design, the test plan and the open
+questions. One question is still open: where a TreeAMR state vector's
+ownership partition comes from. `PLAN.md` splits the work into steps
+0–6. What exists:
+- `Project.toml` with CommonSolve as the one run-time dependency, and
+  Test, LinearAlgebra and TOML as test-only extras;
+- `src/IMEXRungeKutta.jl`, the module shell, which re-exports
+  CommonSolve's `init`, `solve`, `solve!` and `step!` and has no methods
+  of its own yet;
+- `test/runtests.jl` and `test/scaffold_tests.jl`;
+- `.github/workflows/CI.yml` and `.github/dependabot.yml`, which run once
+  there is a remote;
+- `README.md`.
+
+Step 1, the tableaus, is next.
 
 ## Commands
 
-Nothing to run yet beyond the template. Once there is a test suite, run
-it at one thread, at four threads, and with `--check-bounds=yes`:
+The suite, at one thread, at four threads, and with `--check-bounds=yes`,
+on the current release (`julia`, 1.13 on Erik's Mac):
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.test()'
@@ -59,9 +70,42 @@ julia --project=. --threads=4 -e 'using Pkg; Pkg.test()'
 julia --project=. --check-bounds=yes -e 'using Pkg; Pkg.test()'
 ```
 
+On the floor, Julia 1.10, **`Pkg.test()` forces `--check-bounds=yes`**
+on the test process whatever the parent was started with, and ignores the
+parent's `--check-bounds=auto` (measured in step 0). The allocation tests
+would then skip themselves. Pass the mode as a test-process argument,
+which does override it; this is also how CI's `julia-runtest` passes it:
+
+```bash
+julia +1.10 --project=. -e 'using Pkg; Pkg.test(julia_args=["--check-bounds=auto"])'
+```
+
+```bash
+julia +1.10 --project=. --threads=4 -e 'using Pkg; Pkg.test(julia_args=["--check-bounds=auto"])'
+```
+
+`Pkg.test()` passes the parent's `--threads` on to the test process on
+both versions (measured in step 0). The suite prints the thread count and
+`CHECK_BOUNDS_FORCED` as it starts: check them.
+
+`Manifest.toml` is untracked and shared between Julia versions. `Pkg.test`
+re-resolves a manifest written by the other version by itself, but a
+plain `julia +1.10 --project=. -e 'using IMEXRungeKutta'` after a 1.13
+resolve fails, because PrecompileTools 1.3 (CommonSolve's one dependency)
+requires Julia 1.12. Delete `Manifest.toml` when switching.
+
+The clean-archive check, run before a step is reported done:
+
+```bash
+d=$(mktemp -d) && git archive HEAD | tar -x -C "$d" &&
+    julia --project="$d" -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+```
+
 Allocation tests are meaningless under `--check-bounds=yes`; skip them
-there. Measure allocations with a top-level helper that takes concrete
-arguments, not a closure inside a `@testset`, which allocates itself.
+there, by `Base.JLOptions().check_bounds == 1` (`CHECK_BOUNDS_FORCED` in
+`test/runtests.jl`). Measure allocations with a top-level helper that
+takes concrete arguments, not a closure inside a `@testset`, which
+allocates itself.
 
 ## Conventions
 
@@ -79,8 +123,11 @@ EntropyEOS):
   `similar(u0)` arrays, so that device arrays work. No scalar indexing
   into the state, except in the by-owner path for a CPU `Array`
   (`CODE.md`, "Stage arithmetic").
-- The only run-time dependency is CommonSolve. Test-only dependencies go
-  in `[extras]`, e.g. OrdinaryDiffEqSDIRK as an oracle.
+- The only run-time dependency is CommonSolve (which brings
+  PrecompileTools and Preferences with it). Test-only dependencies go in
+  `[extras]` and `[targets]`, e.g. OrdinaryDiffEqSDIRK as an oracle.
+  `test/scaffold_tests.jl` asserts the `[deps]` list, so adding one means
+  amending `CODE.md` and that test together.
 - Unicode in mathematical contexts (`Δt`, `u★`, `γ`, `Ã`, `b̃`, `c̃`).
   `ArgumentError`s say *why*.
 - Docstrings are prose-first and point at `CODE.md`.
