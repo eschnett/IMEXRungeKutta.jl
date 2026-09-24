@@ -14,9 +14,11 @@ const CHECK_BOUNDS_FORCED = Base.JLOptions().check_bounds == 1
 @info "Running the tests on $(Threads.nthreads()) thread(s)" CHECK_BOUNDS_FORCED
 
 # Test-only helpers: the order conditions, stability and SSP properties;
-# and the mock callbacks, which log their calls.
+# the mock callbacks, which log their calls; and the fitted order and the
+# Kaps problem, for the validation files.
 include("tableau_properties.jl")
 include("mocks.jl")
+include("problems.jl")
 
 @testset "IMEXRungeKutta.jl" begin
     include("scaffold_tests.jl")
@@ -34,5 +36,20 @@ include("mocks.jl")
     end
     @testset "README" begin
         include("readme_tests.jl")
+    end
+    @testset "Order" begin
+        include("order_tests.jl")
+    end
+    @testset "Stiff limit" begin
+        include("stiff_tests.jl")
+    end
+    @testset "Asymptotic preservation" begin
+        include("ap_tests.jl")
+    end
+    @testset "SSP" begin
+        include("ssp_tests.jl")
+    end
+    @testset "Oracle" begin
+        include("oracle_tests.jl")
     end
 end
