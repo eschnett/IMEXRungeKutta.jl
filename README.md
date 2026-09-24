@@ -104,6 +104,9 @@ What is tested, and recorded in `CODE.md`:
   from 3 to 2 there), where a step lands as `ε → 0`, and total variation
   under upwind advection;
 - agreement with OrdinaryDiffEqSDIRK to round-off;
+- a PDE, the Jin–Xin relaxation of 2D Burgers' equation on a 3 × 20 × 20
+  `Array` state, in `examples/jin_xin_2d.jl`: run it with
+  `julia --project=. examples/jin_xin_2d.jl`;
 - a `Float32` run on an Apple GPU, with an `MtlArray` state and scalar
   indexing disallowed, which agrees with the same run on the CPU. It runs
   on request only, in an environment of its own; `test/metal_tests.jl`

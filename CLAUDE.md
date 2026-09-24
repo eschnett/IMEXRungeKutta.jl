@@ -94,6 +94,10 @@ What exists:
   broadcast against by owner, with a persistent-worker prototype for
   comparison) and `bench/symmetry_stage_arithmetic.sh`, its SLURM job. The
   numbers are in `CODE.md`, "By owner, as built";
+- `examples/jin_xin_2d.jl`, the Jin–Xin relaxation of 2D Burgers on a
+  3 × 20 × 20 `Array` state, and `test/jin_xin_tests.jl`, which includes
+  it (`CODE.md`, "Testing", A PDE). Run it on its own with
+  `julia --project=. examples/jin_xin_2d.jl`;
 - `.github/workflows/CI.yml`, with five cells (`CODE.md`, "File
   layout"), and `.github/dependabot.yml`;
 - `README.md`, with the CI and Codecov badges, installation by URL, the

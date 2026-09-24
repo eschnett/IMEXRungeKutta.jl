@@ -1117,6 +1117,12 @@ What it says:
   (amended in step 3). Step 5 adds `owner_tests.jl`, the by-owner items of
   Mechanics, in a testset of its own after `mechanics_tests.jl`, whose
   corner tableaus it reuses (proposed in step 5, decided 2026-09-24).
+  `jin_xin_tests.jl` includes `examples/jin_xin_2d.jl` and asserts what
+  it computes (amended 2026-09-24; see "A PDE" under
+  [Testing](#testing-decided)).
+- `examples/`: `jin_xin_2d.jl`, the Jin–Xin relaxation of 2D Burgers,
+  runnable on its own (`julia --project=. examples/jin_xin_2d.jl`) and
+  included by its test, so that it cannot drift (amended 2026-09-24).
 - `bench/`: `stage_arithmetic.jl`, the thread sweep of step 5, and
   `symmetry_stage_arithmetic.sh`, its SLURM job, after TreeAMR's
   `bench/symmetry_affinity.sh` (proposed in step 5, decided 2026-09-24).
@@ -1378,6 +1384,27 @@ failure mode it guards.
     where `c̃_s = 1` and is `@test_broken` where not (#4620); the
     14-digit SSP3(4,3,3) is compared on its own; and our ARS(4,4,3)
     differs from upstream's by `O(Δt⁴)` per step.
+- **A PDE** (amended 2026-09-24, after the plan): the Jin–Xin relaxation
+  of 2D Burgers' equation, `examples/jin_xin_2d.jl`,
+  `u_t + v_x + w_y = 0`, `v_t + a²u_x = −(v − u²/2)/ε`,
+  `w_t + a²u_y = −(w − u²/2)/ε`, periodic, 20 × 20 cells, first-order
+  upwind for the linear hyperbolic part (explicit), and the relaxation
+  (implicit) solved in closed form. It checks the interface end to end on
+  a state that is a 3 × 20 × 20 `Array`, not a vector. For all seven
+  tableaus, at `a = 2`, `Δt = 0.01`, 25 steps (measured 2026-09-24,
+  asserted by `test/jin_xin_tests.jl`):
+  - `sum(u)` is conserved to 2e−13, since the stage solve leaves `u` as
+    it entered;
+  - the stage limiter runs 1, 2 or 3 times per step, as the tableau's
+    explicit-used, non-trivial stages say;
+  - at ε = 1e−8, `max |v − u²/2|` is 4.1e−8 for both ARS schemes (both
+    parts stiffly accurate), 1.7e−3 and 8.4e−4 for SSP2(3,2,2) and
+    SSP2(3,3,2) (implicit part only), and 0.012–0.033 for the other three,
+    as "Where a step ends in the stiff limit" predicts;
+  - at ε = 1e−8 every tableau's `u` is within 1.3e−3 of ARS(4,4,3)'s,
+    SSP3(4,3,3)'s within 3.7e−5;
+  - `partition = :even` and a partition of two ranges per thread give
+    bitwise the broadcast's result.
 
 ## Validation (measured in step 3)
 

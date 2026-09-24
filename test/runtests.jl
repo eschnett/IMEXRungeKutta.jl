@@ -55,6 +55,9 @@ include("problems.jl")
     @testset "Oracle" begin
         include("oracle_tests.jl")
     end
+    @testset "A PDE: Jin–Xin relaxation" begin
+        include("jin_xin_tests.jl")
+    end
     # Last, after every file has run: the device smoke run is
     # `metal_tests.jl`, in its own environment, and a file here that
     # loaded Metal would make every `Pkg.test()` need it.
