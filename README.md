@@ -87,11 +87,11 @@ with the stage and step limiters, for all seven named tableaus
 (`IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP2332`, `IMEXSSP3332`, `IMEXSSP3433`,
 `ARS222`, `ARS443`) and a caller's own `IMEXTableau`. The stage arithmetic
 is one fused broadcast per combination by default, for any array type.
-Since 0.1.0 (not yet released), for a CPU `Array` with threads,
-`init(...; partition = :even)`, or an
-explicit partition with one collection of index ranges per thread, runs
-each combination on every thread at once, each element on the thread
-that owns it, with bitwise the same result. `step!` is type-stable. On the
+After 0.1.0, on `main` and not yet in a release: for a CPU `Array` with
+threads, `init(...; partition = :even)`, or an explicit partition with one
+collection of index ranges per thread, runs each combination on every
+thread at once, each element on the thread that owns it, with bitwise the
+same result. `step!` is type-stable. On the
 broadcast path it is allocation-free for a CPU `Array`; by owner it
 allocates a few hundred bytes per thread per combination, whatever the
 state size, and nothing at one thread.

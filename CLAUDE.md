@@ -37,14 +37,16 @@ Rules that follow from `CODE.md` and govern every change:
 
 **Steps 0–5 done: scaffolding, the tableaus, the integrator on the
 broadcast path, the validation, the Metal smoke run, and the stage
-arithmetic by owner; v0.1.0 is prepared, and the tag is Erik's**
-(2026-09-24). `CODE.md` records the requirements, the
-method, the survey of OrdinaryDiffEq and ClimaTimeSteppers, the package
-design, the test plan and the open questions. Two questions are still
-open: where a TreeAMR state vector's ownership partition comes from, and
-whether SSP2(3,3,2)'s coefficients, recalled by the step-1 reviewer rather
-than transcribed, match Pareschi & Russo (2005). `PLAN.md` splits the work
-into steps 0–6; step 6, the review pass, is next. What exists:
+arithmetic by owner; v0.1.0 is prepared, and the tag is Erik's. Step 6's
+review is done and awaits Erik's confirmation of the (proposed)
+decisions in `CODE.md`** (2026-09-24). `CODE.md` records the
+requirements, the method, the survey of OrdinaryDiffEq and
+ClimaTimeSteppers, the package design, the test plan and the open
+questions. Two questions are still open: where a TreeAMR state vector's
+ownership partition comes from, and whether SSP2(3,3,2)'s coefficients,
+recalled by the step-1 reviewer rather than transcribed, match Pareschi &
+Russo (2005). `PLAN.md` splits the work
+into steps 0–6; it is deleted once Erik has confirmed step 6. What exists:
 - `Project.toml` with CommonSolve as the one run-time dependency, and
   Test, LinearAlgebra, TOML and OrdinaryDiffEqSDIRK (compat `2.9.6`, the
   oracle) as test-only extras;
@@ -101,17 +103,19 @@ once Erik has tagged it, with `rev = "v0.1.0"`. On Metal, each new state
 length costs about a second of kernel compilation in Metal's broadcast
 (`CODE.md`, "On a device"), which a regrid pays.
 
-**TreeGRRMHD's 4c is this step 3.** SSP3(4,3,3) is L-stable (computed
-in step 1), drops from order 3 to 2 in the stiff limit, in the stiff
-component, and ends each step `Δt (1 − bᵀA⁻¹c̃) f = −0.2844 Δt f` off the
-equilibrium, which does not accumulate; at a jump of the equilibrium that
-is an overshoot of `0.2844 C` ("Validation" in `CODE.md`).
+**TreeGRRMHD's 4c is this step 3.** The numbers it needs for
+SSP3(4,3,3), its L-stability, its order in the stiff limit and where its
+step ends there, are in `CODE.md`, "Where a step ends in the stiff limit"
+and "Validation".
 
 **0.1.0 is prepared, not tagged.** Before the tag: Erik commits his
 `LICENSE.md` (MIT); `main` gets step 4, and the remote's `main`, which
 has steps 0–2, gets steps 3 and 4; and CI is green there. The tag, and
-any registration, are Erik's. Step 5 is on its branch, after 0.1.0; its
-Symmetry run is Erik's (`bench/symmetry_stage_arithmetic.sh`).
+any registration, are Erik's. Step 5 is on local `main` too, after the
+0.1.0 commit (ea555c6), while `Project.toml` still says 0.1.0: whether
+the tag goes on that commit or a later one, and the next version number,
+are Erik's. Its Symmetry run is Erik's
+(`bench/symmetry_stage_arithmetic.sh`).
 
 ## Commands
 
@@ -223,8 +227,10 @@ EntropyEOS):
 
 - 4-space indent, wrap at about 80–90 columns; `return` on the last line
   of any non-trivial function.
-- **Julia 1.10** (`julia = "1.10"` in `[compat]`). No `[sources]`, since
-  that needs 1.11.
+- **Julia 1.10** (`julia = "1.10"` in `[compat]`). No `[sources]` in the
+  root `Project.toml`, since that needs 1.11. The one `[sources]` is the
+  Metal environment's, which 1.10 ignores and `Pkg.develop` replaces
+  ("Commands").
 - Generic in the scalar type `T` and in the array type. No float literals
   in `T`-generic code: write `T(1//2)` or `oftype(x, 2)`. Float32 must
   work.
@@ -239,7 +245,12 @@ EntropyEOS):
   amending `CODE.md` and that test together.
 - Unicode in mathematical contexts (`Δt`, `u★`, `γ`, `Ã`, `b̃`, `c̃`).
   `ArgumentError`s say *why*.
-- Docstrings are prose-first and point at `CODE.md`.
+- Docstrings are prose-first and point at `CODE.md`, by a section's
+  heading or a bold paragraph label that exists there.
+- `README.md`'s ` ```julia ` blocks are extracted and run by
+  `test/readme_tests.jl`, so they must run as written; code that must
+  not run, such as the installation, is indented instead. CI runs on a
+  README-only push to `main` for that reason.
 - **Testset names are claims**, each opening with a comment naming the
   failure mode it guards.
 

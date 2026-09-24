@@ -15,7 +15,8 @@ smoke run ([On a device](#on-a-device-measured-in-step-4)), are done, and
 v0.1.0 is prepared; the tag is Erik's. Step 5, the stage arithmetic by
 owner ([By owner, as built](#by-owner-as-built-measured-in-step-5)), is
 done; its Symmetry numbers are pending a run. Step 6, the review pass, is
-next.
+done, and waits on Erik's confirmation of the decisions marked
+(proposed) before the plan is closed (amended in step 6).
 
 ## Purpose
 
@@ -522,7 +523,9 @@ What step 2 settled (proposed in step 2):
     coefficients cannot be converted to it;
   - `t1 ≤ t0`, since the integration runs forward over a nonempty
     interval;
-  - a `dt` that is not positive and finite, and a non-finite `tspan`.
+  - a `dt` that is not positive and finite, and a non-finite `tspan`;
+  - a `dt` that is not a real number (amended in step 6: the code has
+    refused it since step 2, and a test now checks it).
 - **`IMEXProblem`** holds `f_exp!`, `solve_imp!`, `u0`, `tspan`, promoted
   to one type, and `p`.
 
@@ -648,6 +651,8 @@ What step 1 settled (proposed in step 1):
   chooses explicitly.
 - **Two more refusals:** a tableau with no stages, and a coefficient
   that is not finite.
+- **It prints as** `IMEXTableau{BigFloat}("SSP3(4,3,3)", 4 stages)`
+  (amended in step 6, which recorded it and added the test).
 - **`IMEXTableau` is exported** beside the seven names, for a caller's own
   tableau.
 - **Internal functions for step 2's plan**, in `src/tableau.jl`:
@@ -1075,7 +1080,11 @@ touch, pinned and interleaved, and unpinned.
   allocation tests run on the floor and at four threads.
   `julia-runtest`'s default, `yes`, would skip them in every cell.
   There is no Metal cell (proposed in step 4): GitHub's hosted macOS
-  arm64 runners are virtual machines without Metal support.
+  arm64 runners are virtual machines without Metal support. A push to
+  `main` that changes only Markdown files does not run CI, unless one of
+  them is `README.md`, whose `julia` block `readme_tests.jl` runs
+  (proposed in step 6; until step 6 every `.md` was ignored, so a
+  README-only change could break the suite unseen).
 
 ### Documentation (decided)
 
@@ -1316,10 +1325,15 @@ within 0.005 of the number here.
 
 ### The stiff limit
 
-`test/stiff_tests.jl`: the Kaps problem, split as `PLAN.md` says, from
-`y(0) = (1, 1)` to `t = 1`. The error is the largest over the steps and
-over both components; the order is fitted over `Δt = 1/40, 1/80, 1/160`.
-Each number is asserted to ±0.15.
+`test/stiff_tests.jl`: the Kaps problem,
+`y₁′ = −(2 + 1/ε) y₁ + y₂²/ε` and `y₂′ = y₁ − y₂ − y₂²`, whose exact
+solution is `y₁ = e^{−2t}`, `y₂ = e^{−t}` for every `ε`, from
+`y(0) = (1, 1)` to `t = 1`. The implicit part is `g = ((y₂² − y₁)/ε, 0)`,
+whose stage solve is exact, `U₂ = u★₂` and then
+`U₁ = (ε u★₁ + γΔt U₂²)/(ε + γΔt)`, and the explicit part is the rest
+(amended in step 6: this said "split as `PLAN.md` says"). The error is the
+largest over the steps and over both components; the order is fitted over
+`Δt = 1/40, 1/80, 1/160`. Each number is asserted to ±0.15.
 
 | | stated | `ε = 1` | `ε = 10⁻³` | `ε = 10⁻⁶` | `ε = 10⁻⁹` |
 |---|---|---|---|---|---|

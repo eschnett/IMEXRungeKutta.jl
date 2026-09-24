@@ -7,9 +7,11 @@ it says what changes, what must not change, and what must be measured
 and recorded. `CLAUDE.md` has the mechanics. Delete this file when the
 last step is marked *(Done.)*.
 
-**Steps 0–5 are done. Step 6 is next.** The 0.1.0 tag of step 4 is
-Erik's, and waits on his `LICENSE.md` and a green CI on the remote. Step
-5's Symmetry run is Erik's too.
+**Steps 0–5 are done. Step 6's review is done, and awaits Erik's
+confirmation of the proposed decisions**; only then is step 6 marked
+done and this file deleted. The 0.1.0 tag of step 4 is Erik's, and waits
+on his `LICENSE.md` and a green CI on the remote. Step 5's Symmetry run
+is Erik's too.
 
 Each step ends in a green suite and a `CODE.md` update, and each is a
 brief that a single session can carry. The steps are in dependency
