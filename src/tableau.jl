@@ -211,19 +211,31 @@ function implicit_used(tab::IMEXTableau)
 end
 
 """
+    row_empty(tab::IMEXTableau, k)
+
+Whether stage `k`'s row is empty in both parts, `ã_kj = a_kj = 0` for all
+`j < k`, so that its `u★` is `uⁿ`. Taken from the exact coefficients.
+"""
+function row_empty(tab::IMEXTableau, k::Integer)
+    return all(iszero, @view tab.Ã[k, 1:(k - 1)]) && all(iszero, @view tab.A[k, 1:(k - 1)])
+end
+
+"""
     scratch_count(tab::IMEXTableau)
 
 The number of state-sized scratch arrays the stage plan needs, besides
 `integ.u`: `U`, one per implicit-used stage, one per explicit-used stage,
-and one more if some solving stage is not implicit-used, since `u★` is
-otherwise formed in the array that then holds `d_k` ("The stage plan and
-storage" in `CODE.md`).
+and one more if some solving stage that is not implicit-used has a
+nonempty row. `u★` is otherwise formed in the array that then holds `d_k`,
+and a stage with an empty row has `u★ = uⁿ`, which is `integ.u` itself
+("The stage plan and storage" in `CODE.md`; the empty-row case amended in
+step 2).
 """
 function scratch_count(tab::IMEXTableau)
     sol = solves(tab)
     imp = implicit_used(tab)
     ex = explicit_used(tab)
-    extra = any(sol .& .!imp) ? 1 : 0
+    extra = any(k -> sol[k] && !imp[k] && !row_empty(tab, k), 1:nstages(tab)) ? 1 : 0
     return 1 + count(imp) + count(ex) + extra
 end
 
