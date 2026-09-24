@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+    # A Markdown-only change cannot move a measured number.
+    paths-ignore:
+      - "**.md"
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.threads || 1 }} thread(s) - check-bounds=${{ matrix.check_bounds || 'auto' }}
+    runs-on: ${{ matrix.os }}
+    # A guard against a runtime regression, not a budget. PLAN.md asks for
+    # a suite under about 5 minutes at one thread; step 0's takes seconds.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      # One cell per axis, spelled out rather than a `version x os`
+      # product: the floor version, the current release on Linux and on
+      # macOS/arm64, and threads.
+      matrix:
+        include:
+          # Julia 1.10 is the floor (`julia = "1.10"` in `[compat]`). It is
+          # stricter than the current release in ways a local run on the
+          # newer version does not see, such as refusing to redefine a
+          # `const`.
+          - version: "1.10"
+            os: ubuntu-latest
+          # The one bounds-checked cell, and the one instrumented cell.
+          # `--check-bounds=yes` re-checks every index the by-owner stage
+          # arithmetic forms under `@inbounds`, and the allocation tests
+          # skip themselves under it -- which is also why coverage, which
+          # perturbs allocations, rides here and nowhere else.
+          - version: "1"
+            os: ubuntu-latest
+            check_bounds: "yes"
+            coverage: true
+          # arm64 on the current release.
+          - version: "1"
+            os: macOS-latest
+          # Threaded, for the by-owner stage arithmetic: its result must
+          # be bitwise the broadcast one at every thread count. Never
+          # instrument this one: a coverage hit is an atomic increment on
+          # one counter per line, and threads contend on it.
+          - version: "1"
+            os: ubuntu-latest
+            threads: 4
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: ${{ matrix.version }}
+      - uses: julia-actions/cache@v3
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+        with:
+          # Only where the badge reads it. The dispatch arm keeps the
+          # upload path exercisable from a branch.
+          coverage: ${{ matrix.coverage == true && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
+          # Explicit, and `auto` everywhere but one cell, because the
+          # action's default is `yes`, and under it the allocation tests
+          # skip themselves: `step!` being allocation-free would then be
+          # checked nowhere. The action hands this to `Pkg.test` as a
+          # `julia_args` flag, which is what overrides Julia 1.10's own
+          # forced `--check-bounds=yes` (measured in step 0; see "Commands"
+          # in CLAUDE.md).
+          check_bounds: ${{ matrix.check_bounds || 'auto' }}
+        env:
+          JULIA_NUM_THREADS: ${{ matrix.threads || 1 }}
+      - uses: julia-actions/julia-processcoverage@v1
+        if: ${{ matrix.coverage == true && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
+      - uses: codecov/codecov-action@v5
+        if: ${{ matrix.coverage == true && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          # A Codecov outage should not turn a green test run red.
+          fail_ci_if_error: false
