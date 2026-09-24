@@ -35,38 +35,53 @@ Rules that follow from `CODE.md` and govern every change:
 
 ## Current state
 
-**Steps 0 and 1 done: scaffolding and the tableaus** (2026-09-24).
-`CODE.md` records the requirements, the method, the survey of
-OrdinaryDiffEq and ClimaTimeSteppers, the package design, the test plan
-and the open questions. Two questions are still open: where a TreeAMR
-state vector's ownership partition comes from, and whether SSP2(3,3,2)'s
-coefficients, recalled by the step-1 reviewer rather than transcribed,
-match Pareschi & Russo (2005). `PLAN.md` splits the work
+**Steps 0–2 done: scaffolding, the tableaus, and the integrator on the
+broadcast path** (2026-09-24). `CODE.md` records the requirements, the
+method, the survey of OrdinaryDiffEq and ClimaTimeSteppers, the package
+design, the test plan and the open questions. Two questions are still
+open: where a TreeAMR state vector's ownership partition comes from, and
+whether SSP2(3,3,2)'s coefficients, recalled by the step-1 reviewer rather
+than transcribed, match Pareschi & Russo (2005). `PLAN.md` splits the work
 into steps 0–6. What exists:
 - `Project.toml` with CommonSolve as the one run-time dependency, and
   Test, LinearAlgebra and TOML as test-only extras;
 - `src/IMEXRungeKutta.jl`, the module, which re-exports CommonSolve's
-  `init`, `solve`, `solve!` and `step!` (no methods yet) and exports
+  `init`, `solve`, `solve!` and `step!` and exports `IMEXProblem`,
   `IMEXTableau` and the seven named tableaus;
-- `src/tableau.jl`: `IMEXTableau{R}`, its checks, and the internals step
-  2's plan reads: `solves`, `explicit_used`, `implicit_used`,
+- `src/tableau.jl`: `IMEXTableau{R}`, its checks, and the internals the
+  plan reads: `solves`, `explicit_used`, `implicit_used`, `row_empty`,
   `scratch_count` and `coefficients(T, Tt, tab)`;
 - `src/tableaus.jl`: `IMEXSSP222`, `IMEXSSP2322` (SSP2(3,2,2)),
   `IMEXSSP2332` (SSP2(3,3,2), in neither upstream, so no oracle),
   `IMEXSSP3332`, `IMEXSSP3433`, `ARS222` and `ARS443`, in closed form;
+- `src/lincomb.jl`: `lincomb!`, `copy_state!`, `increment!` and
+  `first_touch!`, each with a last `partition` argument that is `nothing`
+  (one fused broadcast) until step 5 adds the owner path;
+- `src/plan.jl`: `Stage`, `StagePlan`, `build_plan` and `plan_calls`;
+- `src/integrator.jl`: `IMEXProblem`, `IMEXIntegrator`, and the methods
+  of `init`, `step!`, `solve!` and `solve`;
 - `test/runtests.jl`, `test/scaffold_tests.jl`,
   `test/tableau_properties.jl` (test-only helpers: order conditions,
-  `R(z)`, the E-polynomial, the SSP coefficient) and
-  `test/tableau_tests.jl`;
+  `R(z)`, the E-polynomial, the SSP coefficient), `test/tableau_tests.jl`,
+  `test/mocks.jl` (logging mock callbacks), `test/interface_tests.jl`,
+  `test/mechanics_tests.jl`, `test/smoke_order_tests.jl` and
+  `test/readme_tests.jl` (which runs the README's example);
 - `.github/workflows/CI.yml` and `.github/dependabot.yml`, which run once
   there is a remote;
-- `README.md`.
+- `README.md`, with the worked example.
 
-Step 2, the integrator, is next. `CODE.md` ("Tableaus", "Measured
-properties") has each tableau's patterns and scratch count, which the
-stage plan must reproduce. Upstream's `ARS443` differs from ours, which
-is the paper's, in `b̃` ("Cross-checks"); step 3's oracle test must allow
-for it. SSP2(3,3,2) has no oracle.
+**TreeGRRMHD's step 5 may start.** It needs 4b, which is this step 2. It
+adds the package by URL. There is no remote yet, so until there is one
+the URL is this repository's local path,
+`Pkg.add(url = "/Users/eschnett/src/jl/IMEXRungeKutta")`, which tracks
+`main`.
+
+Step 3, the validation, is next. Upstream's `ARS443` differs from ours,
+which is the paper's, in `b̃` ("Cross-checks"); step 3's oracle test must
+allow for it. SSP2(3,3,2) has no oracle. In the stiff limit, SSP3(4,3,3)
+ends each step `O(Δt)` off the equilibrium, as its implicit part is not
+stiffly accurate ("Where a step ends in the stiff limit" in `CODE.md`);
+step 3's asymptotic-preservation test should expect that, not `O(ε)`.
 
 ## Commands
 

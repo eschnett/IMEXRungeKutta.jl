@@ -7,7 +7,7 @@ it says what changes, what must not change, and what must be measured
 and recorded. `CLAUDE.md` has the mechanics. Delete this file when the
 last step is marked *(Done.)*.
 
-**Steps 0 and 1 are done. Step 2 is next.**
+**Steps 0–2 are done. Step 3 is next.**
 
 Each step ends in a green suite and a `CODE.md` update, and each is a
 brief that a single session can carry. The steps are in dependency
@@ -247,7 +247,7 @@ Accept:
 - The table is in `CODE.md`.
 - SSP3(4,3,3)'s L-stability is stated as computed, not quoted.
 
-## Step 2 — The integrator, broadcast path (TreeGRRMHD 4b)
+## Step 2 — The integrator, broadcast path (TreeGRRMHD 4b) *(Done, 2026-09-24.)*
 
 `CODE.md`: "One step", and all of "Package design" except the by-owner
 path in "Stage arithmetic".

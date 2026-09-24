@@ -8,8 +8,9 @@ item is marked **(decided)**, **(proposed)** or **(open)**.
 **Status (2026-09-24):** the [package design](#package-design) is
 complete, except where the partition for TreeAMR state vectors comes
 from (open). SSP2(3,3,2)'s coefficients are still to be checked against
-the paper (open). The implementation plan is `PLAN.md`. Steps 0 and 1, the
-scaffolding and the tableaus, are done; step 2, the integrator, is next.
+the paper (open). The implementation plan is `PLAN.md`. Steps 0–2, the
+scaffolding, the tableaus and the integrator on the broadcast path, are
+done; step 3, the validation, is next.
 
 ## Purpose
 
@@ -154,6 +155,27 @@ that make `R(∞) = 0` (above). Its implicit part is also A-stable, and so
 L-stable. That is computed, not quoted (measured in step 1): all three
 nonzero coefficients of its E-polynomial are positive (below).
 Everything else is computed, not quoted.
+
+**Where a step ends in the stiff limit** (measured in step 2). For a
+relaxation `g = −(u − ū)/ε` with `ε → 0`, each stage solve puts its `U`
+on the equilibrium, but the update of a tableau whose implicit part is
+not stiffly accurate need not. With every `a_kk ≠ 0` and `R(∞) = 0`, the
+update is `uⁿ⁺¹ = ū + Δt (b̃ᵀ − bᵀA⁻¹Ã) F`, where `F` is the vector of
+the stages' explicit tendencies. For an `f` that depends on `t` alone,
+this is `Δt (1 − bᵀA⁻¹c̃) f` to leading order.
+- `1 − bᵀA⁻¹c̃` is −0.2844 for SSP3(4,3,3), and −0.7071 for SSP2(2,2,2)
+  and SSP3(3,3,2).
+- It is 0 for the four schemes with a stiffly accurate implicit part:
+  SSP2(3,2,2), SSP2(3,3,2) and the two ARS (for ARS, on stages 2–s).
+- On the README's problem, `u′ = cos t − (u − ū)/ε` with `ε = 10⁻⁶` and
+  `Δt = 0.01`, SSP3(4,3,3) ends each step `−0.286 Δt cos t` off the
+  quasi-steady state `ū + ε cos t`. That is a displacement of 1.5e−3,
+  2858 times `ε cos t` and of the other sign. ARS(4,4,3) ends on it to
+  within 0.4% of `ε cos t`.
+- The displacement does not accumulate, since every step starts by
+  relaxing again.
+
+Step 3's asymptotic-preservation test measures this per tableau.
 
 **Measured properties** (measured in step 1). These are computed by
 `test/tableau_properties.jl` and asserted by `test/tableau_tests.jl`:
@@ -411,6 +433,32 @@ The alternatives, not taken:
   no cached tendency. So an atmosphere reset or a diagnostic fix-up in
   the driver is always safe.
 
+What step 2 settled (proposed in step 2):
+- **The integrator type** is `IMEXIntegrator`, a mutable struct, not
+  exported. Every field but `t` and `nstep` is `const`, so `integ.u = v`
+  is an error rather than a silent rebinding that the stage plan, which
+  holds `integ.u`, would not see. The internal fields are `t0`, `t1`, the
+  four callbacks and the plan. It prints as
+  `IMEXIntegrator("SSP3(4,3,3)", t = 0.3, step 3 of 10)`.
+- **`step!` returns `nothing`**, as OrdinaryDiffEq's does. `solve!`
+  returns the integrator.
+- **`solve` is a method of our own**,
+  `solve(prob::IMEXProblem, tab::IMEXTableau; kwargs...) =
+  solve!(init(prob, tab; kwargs...))`. CommonSolve 0.2.14 has the same
+  thing as a generic fallback, `solve(args...; kwargs...) =
+  solve!(init(args...; kwargs...))` (checked in step 2). Our own method
+  does not rest on it, and carries the docstring.
+- **`dt` is a required keyword**, and there is no default tableau.
+- **`init` refuses**, each with an `ArgumentError` that says why:
+  - a `partition` other than `nothing`, as not implemented yet (step 5);
+  - a state whose real element type is not an `AbstractFloat`, since the
+    coefficients cannot be converted to it;
+  - `t1 ≤ t0`, since the integration runs forward over a nonempty
+    interval;
+  - a `dt` that is not positive and finite, and a non-finite `tspan`.
+- **`IMEXProblem`** holds `f_exp!`, `solve_imp!`, `u0`, `tspan`, promoted
+  to one type, and `p`.
+
 ### The callback contracts (decided)
 
 - **`f_exp!(du, u, p, t)`** writes all of `du` and does not change `u`.
@@ -418,6 +466,9 @@ The alternatives, not taken:
 - **`solve_imp!(U, u★, γΔt, p, t)`** writes `U` so that
   `U = u★ + γΔt g(U, t)`.
   - `U` and `u★` are distinct arrays, and `u★` must not be changed.
+    Where the stage's row is empty, `u★ = uⁿ`, and the integrator passes
+    `integ.u` itself as `u★`, with no copy (amended in step 2; see
+    [The stage plan and storage](#the-stage-plan-and-storage-decided)).
   - **On entry, `U` holds a copy of `u★`** (decided), so the solver
     writes only the components it solves for.
   - Its return value is ignored.
@@ -471,14 +522,26 @@ step limiter, `integ.u` is undefined.
   `Δt = (t1 − t0)/nsteps`, which is at most the requested `dt`. The
   ceiling has a tolerance of a few ulps, so that a chunk meant to be a
   whole number of steps is not given one extra step by round-off.
+  - **The tolerance** (proposed in step 2). With `r = (t1 − t0)/dt` and
+    `m` the integer nearest it, `nsteps = m` if `m ≥ 1` and
+    `|r − m| ≤ 4 (eps(r) + (eps(t0) + eps(t1))/dt)`, and `⌈r⌉`
+    otherwise. The second part is needed: `t1 − t0` inherits the rounding
+    of both ends. In the test's sweep of chunks `(kT, (k + 1)T)` with
+    `dt = T/m` (four `T`, `k` up to 123456, `m` up to 12), 149 of the 288
+    chunks miss `m` by more than `4 eps(r)`, and every one gets exactly
+    `m` steps (measured in step 2). Without any tolerance, `0.07/0.01`,
+    `2.1/0.3` and `(3·0.1)/0.1` would each get one step too many.
+  - So `Δt ≤ dt` holds up to that tolerance, not exactly (amended in
+    step 2): in the sweep, `Δt/dt − 1` is at most 1.1e−11.
 - **No accumulated time.** `tⁿ = t0 + n Δt` is computed afresh at each
   step, not accumulated, and the last step sets `t = t1` exactly. `step!`
   after the last step throws an `ArgumentError`.
 - **Two types.** The time type is that of `t0`, `t1` and `dt` after
-  promotion. The arithmetic type is `T = real(eltype(u0))`, so a complex
-  state works (the order tests use `u′ = iu − u`). Coefficients are
-  converted to `T`, and abscissae to the time type. A `Float32` state
-  with `Float64` time is allowed.
+  promotion, made `float` (amended in step 2), so that an integer `tspan`
+  or a rational `dt` gives `Float64` time. The arithmetic type is
+  `T = real(eltype(u0))`, so a complex state works (the order tests use
+  `u′ = iu − u`). Coefficients are converted to `T`, and abscissae to
+  the time type. A `Float32` state with `Float64` time is allowed.
 
 ### Tableaus are values (decided)
 
@@ -555,7 +618,11 @@ tableau's structure anyway. This resolves "values or types".
 The plan is a heterogeneous tuple whose type records the tableau's
 nonzero pattern. `init` is therefore type-unstable, once, behind a
 function barrier. `step!` is type-stable and allocation-free, and it is
-unrolled over the stages.
+unrolled over the stages. Measured in step 2: `@inferred step!` holds, and
+a step allocates 0 bytes for every tableau, with `Float64`, `Float32` and
+`ComplexF64` states. On an Apple M3 at one thread, with trivial callbacks,
+an SSP3(4,3,3) step on 10⁶ `Float64` entries takes 6.1 ms. It makes 53
+state-sized reads and writes, so that is about 70 GB/s.
 
 A **structural zero is never read**. The array for a skipped tendency is
 not allocated, so no coefficient multiplies it, and `0·NaN` cannot occur
@@ -570,9 +637,51 @@ So the scratch is:
 - `U`;
 - one array per implicit-used stage;
 - one array per explicit-used stage;
-- one more if some solving stage is not implicit-used.
+- one more if some solving stage that is not implicit-used has a
+  nonempty row.
 
 For SSP3(4,3,3) that is 1 + 4 + 3 = 8 arrays, besides `integ.u`.
+
+**An empty row forms no `u★`** (proposed in step 2). A stage whose row is
+empty in both parts has `u★ = uⁿ`. If it solves, the integrator passes
+`integ.u` itself to `solve_imp!` as `u★`: `U` is copied from it, and
+`d_k = U − uⁿ`. Forming `u★` in `d_k` first would cost one more state
+pass per step, for every IMEX-SSP scheme's stage 1. This amends the last
+item of the scratch count, which read "if some solving stage is not
+implicit-used", and `scratch_count` with it (amended in step 2). None of
+the seven named tableaus has such a stage, so their counts are
+unchanged.
+
+What else step 2 settled (proposed in step 2):
+- **The plan's layout.** A `Stage{Solves,ExplicitUsed,ImplicitUsed}` per
+  stage holds its terms, where `u★` is formed, the stage value `U` that
+  `f_exp!` reads (`integ.u` itself at a trivial stage), the `d_k` and
+  `k̃_k` arrays or `nothing`, `γΔt` in `T`, and `c̃_k`, `c_k` in the time
+  type. The three flags are type parameters, so `step!` branches at
+  compile time.
+- **The pattern is the exact tableau's.** A term is present where the
+  exact coefficient is nonzero, and an array exists where `solves`,
+  `explicit_used` and `implicit_used` say so, whatever the coefficient
+  becomes in `T`. A coefficient that underflows to zero in `T` keeps its
+  term, which multiplies an array that exists and has been written (a
+  test, with `ã₂₁ = 10⁻⁶⁰` in `Float32`).
+- **The explicit coefficients are `Δt ã_kj` and `Δt b̃_j`**, formed in
+  `T` from `T(Δt)` and the converted `ã_kj`, `b̃_j`: one more rounding,
+  of relative size `eps(T)`, below that of the combination itself. The
+  increment coefficients `a_kj/a_jj` and `b_j/a_jj` do not involve `Δt`.
+  `γΔt = T(Δt)·a_kk` likewise.
+- **The terms' order** is the explicit terms by increasing `j`, then the
+  implicit ones by increasing `j`, after `x₀ = uⁿ`, summed left to right.
+- **A dead stage does nothing.** A stage that makes no solve and is not
+  explicit-used is read by nothing, so its `u★` is not formed. A stage
+  that solves but is read by neither part still makes its one
+  `solve_imp!` call, as "One step" says; its `u★` then takes the extra
+  array. No named tableau has either.
+- **First touch writes zero.** `init` fills each scratch array with
+  `zero(eltype(u0))`, through the partition.
+- **The plan checks itself.** `init` throws an internal error if the plan
+  allocated other than `scratch_count(tab)` arrays, or if a term reads an
+  array the pattern did not allocate.
 
 ### Stage arithmetic (decided, details proposed)
 
@@ -645,7 +754,12 @@ request to add to TreeGRRMHD's upstream list, not a dependency here.
   every caller.
 
 The combination sits behind one internal function, so the owner path
-can come in a later step without changing the interface.
+can come in a later step without changing the interface. In step 2 it is
+`lincomb!(dst, x₀, terms, partition)`, with `terms` a tuple of
+`(coefficient, array)` pairs and a per-element kernel that folds them
+left to right. `copy_state!`, `increment!` (`d = U − u★`) and
+`first_touch!` take the same last argument. `partition === nothing` is
+one `broadcast!` each; step 5 adds methods (proposed in step 2).
 
 ### File layout (decided)
 
@@ -661,7 +775,11 @@ can come in a later step without changing the interface.
   names are CommonSolve's bindings, and that `[deps]` is CommonSolve
   alone (amended in step 0). `test/tableau_properties.jl` holds the
   test-only tableau properties, and `test/tableau_tests.jl` asserts them
-  (amended in step 1).
+  (amended in step 1). `test/mocks.jl` holds the mock callbacks, which
+  log their calls into buffers preallocated in `p`; `interface_tests.jl`,
+  `mechanics_tests.jl` and `smoke_order_tests.jl` follow `PLAN.md`'s step
+  2; and `readme_tests.jl` evaluates the README's `julia` blocks and
+  checks their result (amended in step 2).
 - Test-only dependencies are `[extras]` and `[targets]` in the root
   `Project.toml`, not a `test/Project.toml` (proposed in step 0). That
   is what `PLAN.md` specifies, and it keeps one file to read for the
@@ -799,6 +917,12 @@ failure mode it guards.
     records `Threads.threadid()` per range);
   - a partition with a gap or an overlap is refused;
   - a Float32 run works;
+  - also (amended in step 2): three tableaus of a caller's own reach the
+    plan's corner cases, the extra array, an empty-row solving stage and a
+    dead stage; the call sequence of each step equals one rederived from
+    the exact tableau, time by time; the stage limiter's change reaches
+    `f_exp!` and nothing else; and `step!` is allocation-free for
+    `Float64`, `Float32` and `ComplexF64` states;
   - a device smoke run passes on Metal, gated by
     `IMEXRUNGEKUTTA_TEST_METAL=1`. It is a short `Float32` run on an
     `MtlArray` state with scalar indexing disallowed, so it covers the
@@ -811,6 +935,14 @@ failure mode it guards.
   - likewise on `u′ = −u + cos t` (implicit `−u`, explicit `cos t`),
     which catches a mistimed explicit stage (the #4620 failure mode) and
     is invisible to a problem where `f` does not depend on `t`.
+  - Measured in step 2, by mutation: #4620's mistiming, the last explicit
+    stage at `tⁿ + Δt`, drops SSP3(3,3,2) and SSP3(4,3,3) to order 1.02
+    on it, as upstream measured. But a swap of `c̃` and `c` at every stage
+    is invisible to it. The coupling conditions `b̃ᵀc = 1/2` and
+    `b̃ᵀc² = 1/3` make an `f` of `t` alone integrate the same with either
+    abscissa, up to order 3. The mechanics test of the call times catches
+    that swap (61 failures), and so does the `g ≡ 0` comparison with the
+    explicit method, whose `f` depends on `u` too (amended in step 2).
 - **Stiff limit:** on the Kaps problem with `ε ∈ {1, 1e−3, 1e−6, 1e−9}`,
   the observed order per `ε` is recorded, including any order reduction.
 - **Asymptotic preservation:** at `ε = 1e−12`, one step lands on the
