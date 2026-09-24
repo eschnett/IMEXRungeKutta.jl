@@ -96,8 +96,8 @@ What exists:
   numbers are in `CODE.md`, "By owner, as built";
 - `.github/workflows/CI.yml`, with five cells (`CODE.md`, "File
   layout"), and `.github/dependabot.yml`;
-- `README.md`, with the CI badge, installation by URL, the worked example
-  and the 0.1.0 status.
+- `README.md`, with the CI and Codecov badges, installation by URL, the
+  worked example and the 0.1.0 status.
 
 **TreeGRRMHD's step 5 may start.** It needs 4b, which is this step 2. It
 adds the package by URL, now the remote's,

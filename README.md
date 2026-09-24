@@ -1,6 +1,7 @@
 # IMEXRungeKutta.jl
 
 [![CI](https://github.com/eschnett/IMEXRungeKutta.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/eschnett/IMEXRungeKutta.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![codecov](https://codecov.io/gh/eschnett/IMEXRungeKutta.jl/graph/badge.svg?token=RFHAIF5SWS)](https://codecov.io/gh/eschnett/IMEXRungeKutta.jl)
 
 Fixed-step additive implicit–explicit Runge–Kutta (IMEX RK) integration
 for method-of-lines systems

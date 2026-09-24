@@ -1179,12 +1179,15 @@ prose-first and point at this document. The README has a worked
 example, including a stage solver. A site can be added later without
 changing anything else.
 
-The README carries one badge, CI's, for `.github/workflows/CI.yml` on
+The README carries two badges: CI's, for `.github/workflows/CI.yml` on
 `main` of `eschnett/IMEXRungeKutta.jl` (proposed in step 4, decided
-2026-09-24). CI's bounds-checked cell uploads coverage to Codecov on
-`main`, but only with a `CODECOV_TOKEN` secret that this repository may
-not have, and with `fail_ci_if_error: false`. So there is no Codecov badge
-until an upload has been seen to succeed.
+2026-09-24), and Codecov's (amended 2026-09-24). CI's bounds-checked cell
+uploads coverage to Codecov, with `fail_ci_if_error: false`, so a Codecov
+outage does not turn a green run red. The first uploads, on 2026-09-24,
+failed with "Token required - not valid tokenless upload" while the step
+stayed green; Erik then added the `CODECOV_TOKEN` secret and the badge. A
+green CI run is therefore not by itself evidence that coverage was
+uploaded: the Codecov step's log says.
 
 ## Why not an existing package
 
