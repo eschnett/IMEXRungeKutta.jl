@@ -35,15 +35,16 @@ Rules that follow from `CODE.md` and govern every change:
 
 ## Current state
 
-**Steps 0–4 done: scaffolding, the tableaus, the integrator on the
-broadcast path, the validation, and the Metal smoke run; v0.1.0 is
-prepared, and the tag is Erik's** (2026-09-24). `CODE.md` records the requirements, the
+**Steps 0–5 done: scaffolding, the tableaus, the integrator on the
+broadcast path, the validation, the Metal smoke run, and the stage
+arithmetic by owner; v0.1.0 is prepared, and the tag is Erik's**
+(2026-09-24). `CODE.md` records the requirements, the
 method, the survey of OrdinaryDiffEq and ClimaTimeSteppers, the package
 design, the test plan and the open questions. Two questions are still
 open: where a TreeAMR state vector's ownership partition comes from, and
 whether SSP2(3,3,2)'s coefficients, recalled by the step-1 reviewer rather
 than transcribed, match Pareschi & Russo (2005). `PLAN.md` splits the work
-into steps 0–6. What exists:
+into steps 0–6; step 6, the review pass, is next. What exists:
 - `Project.toml` with CommonSolve as the one run-time dependency, and
   Test, LinearAlgebra, TOML and OrdinaryDiffEqSDIRK (compat `2.9.6`, the
   oracle) as test-only extras;
@@ -56,12 +57,17 @@ into steps 0–6. What exists:
 - `src/tableaus.jl`: `IMEXSSP222`, `IMEXSSP2322` (SSP2(3,2,2)),
   `IMEXSSP2332` (SSP2(3,3,2), in neither upstream, so no oracle),
   `IMEXSSP3332`, `IMEXSSP3433`, `ARS222` and `ARS443`, in closed form;
-- `src/lincomb.jl`: `lincomb!`, `copy_state!`, `increment!` and
-  `first_touch!`, each with a last `partition` argument that is `nothing`
-  (one fused broadcast) until step 5 adds the owner path;
+- `src/lincomb.jl`: `lincomb!`, `lincomb_copy!`, `copy_state!`,
+  `increment!`, `first_touch!` and `copy_initial`, each with a last
+  `partition` argument: `nothing` is one fused broadcast, and an
+  `OwnerPartition` the by-owner path of step 5, a loop per range on a
+  sticky task placed on the owning thread (`by_owner`). Also the
+  partition's checks (`owner_partition`), `even_partition` (`:even`) and
+  `block_partition`, a helper for segmented block layouts;
 - `src/plan.jl`: `Stage`, `StagePlan`, `build_plan` and `plan_calls`;
 - `src/integrator.jl`: `IMEXProblem`, `IMEXIntegrator`, and the methods
-  of `init`, `step!`, `solve!` and `solve`;
+  of `init` (with `partition`, checked by `resolve_partition`), `step!`,
+  `solve!` and `solve`;
 - `test/runtests.jl`, `test/scaffold_tests.jl`,
   `test/tableau_properties.jl` (test-only helpers: order conditions,
   `R(z)`, the E-polynomial, the SSP coefficient), `test/tableau_tests.jl`,
@@ -78,6 +84,12 @@ into steps 0–6. What exists:
   `test/metal/Project.toml` (Metal, Test, and this package from `../..`);
   it is not part of `Pkg.test()`, and the ordinary suite checks that it
   never sees Metal. The numbers are in `CODE.md`, "On a device";
+- the owner path of step 5: `test/owner_tests.jl` (bitwise identity with
+  the broadcast for every tableau, placement per range, nesting, the
+  refusals, allocations), `bench/stage_arithmetic.jl` (a thread sweep,
+  broadcast against by owner, with a persistent-worker prototype for
+  comparison) and `bench/symmetry_stage_arithmetic.sh`, its SLURM job. The
+  numbers are in `CODE.md`, "By owner, as built";
 - `.github/workflows/CI.yml` and `.github/dependabot.yml`;
 - `README.md`, with the CI badge, installation by URL, the worked example
   and the 0.1.0 status.
@@ -98,8 +110,8 @@ is an overshoot of `0.2844 C` ("Validation" in `CODE.md`).
 **0.1.0 is prepared, not tagged.** Before the tag: Erik commits his
 `LICENSE.md` (MIT); `main` gets step 4, and the remote's `main`, which
 has steps 0–2, gets steps 3 and 4; and CI is green there. The tag, and
-any registration, are Erik's. Step 5, the stage arithmetic by owner, is
-next.
+any registration, are Erik's. Step 5 is on its branch, after 0.1.0; its
+Symmetry run is Erik's (`bench/symmetry_stage_arithmetic.sh`).
 
 ## Commands
 
@@ -187,6 +199,15 @@ The clean-archive check, run before a step is reported done:
 ```bash
 d=$(mktemp -d) && git archive HEAD | tar -x -C "$d" &&
     julia --project="$d" -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+```
+
+The stage-arithmetic benchmark runs its own thread sweep, one Julia
+process per thread count (`IMEXRK_BENCH_THREADS`, default
+`1,2,4,6,8,12`), on a 10⁸-byte state; it takes about two minutes on the
+M3:
+
+```bash
+julia --project=. bench/stage_arithmetic.jl
 ```
 
 Allocation tests are meaningless under `--check-bounds=yes`; skip them

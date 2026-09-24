@@ -86,8 +86,15 @@ here by about `−0.28 Δt cos t` (see `CODE.md`, "Tableaus").
 with the stage and step limiters, for all seven named tableaus
 (`IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP2332`, `IMEXSSP3332`, `IMEXSSP3433`,
 `ARS222`, `ARS443`) and a caller's own `IMEXTableau`. The stage arithmetic
-is one fused broadcast per combination. `step!` is type-stable, and
-allocation-free for a CPU `Array`.
+is one fused broadcast per combination by default, for any array type.
+Since 0.1.0 (not yet released), for a CPU `Array` with threads,
+`init(...; partition = :even)`, or an
+explicit partition with one collection of index ranges per thread, runs
+each combination on every thread at once, each element on the thread
+that owns it, with bitwise the same result. `step!` is type-stable. On the
+broadcast path it is allocation-free for a CPU `Array`; by owner it
+allocates a few hundred bytes per thread per combination, whatever the
+state size, and nothing at one thread.
 
 What is tested, and recorded in `CODE.md`:
 - the tableaus' order, stiff accuracy, L-stability and SSP coefficient,
@@ -106,6 +113,6 @@ Known limits:
   coefficients have not yet been checked against Pareschi & Russo (2005).
   They pass the order conditions, `R(∞) = 0`, and the observed-order,
   stiff-limit and total-variation tests.
-- The stage arithmetic is serial on the host. A by-owner path for threaded
-  CPU arrays, `partition`, is the next step of `PLAN.md`; until then `init`
-  accepts only `partition = nothing`.
+- The broadcast stage arithmetic is serial on the host; `partition` is the
+  threaded path, for a CPU `Array` only. Where a TreeAMR state vector's
+  partition comes from is still open (`CODE.md`, "Stage arithmetic").

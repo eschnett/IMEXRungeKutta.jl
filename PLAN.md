@@ -7,8 +7,9 @@ it says what changes, what must not change, and what must be measured
 and recorded. `CLAUDE.md` has the mechanics. Delete this file when the
 last step is marked *(Done.)*.
 
-**Steps 0–4 are done. Step 5 is next.** The 0.1.0 tag of step 4 is
-Erik's, and waits on his `LICENSE.md` and a green CI on the remote.
+**Steps 0–5 are done. Step 6 is next.** The 0.1.0 tag of step 4 is
+Erik's, and waits on his `LICENSE.md` and a green CI on the remote. Step
+5's Symmetry run is Erik's too.
 
 Each step ends in a green suite and a `CODE.md` update, and each is a
 brief that a single session can carry. The steps are in dependency
@@ -416,7 +417,7 @@ package from `../..` (proposed in step 4). The device agrees with the CPU
 bitwise, on Julia 1.13 and 1.10; the numbers are in `CODE.md`, "On a
 device".
 
-## Step 5 — Stage arithmetic by owner
+## Step 5 — Stage arithmetic by owner *(Done, 2026-09-24; the Symmetry run is pending.)*
 
 `CODE.md`: "Stage arithmetic", "The stage plan and storage" (first
 touch).
@@ -467,6 +468,15 @@ Accept:
 - The suite is green at one and four threads.
 - The allocation claim in `CODE.md` matches the measurement.
 - The benchmark runs.
+
+Outcome: fresh sticky tasks, not persistent workers (proposed in step
+5). A persistent-worker prototype reaches 0 bytes at the same speed for
+one combination, and is kept in the benchmark; `CODE.md`, "By owner, as
+built", says what it leaves out. The owner path allocates 64 bytes plus
+403–433 per thread per combination on 1.13 (559–589 on 1.10), whatever
+the state size, and nothing at one thread. The Mac numbers are in
+`CODE.md`; the Symmetry run, `bench/symmetry_stage_arithmetic.sh`, is
+Erik's.
 
 ## Step 6 — Review pass
 

@@ -13,7 +13,9 @@ scaffolding, the tableaus, the integrator on the broadcast path, the
 validation ([Validation](#validation-measured-in-step-3)) and the Metal
 smoke run ([On a device](#on-a-device-measured-in-step-4)), are done, and
 v0.1.0 is prepared; the tag is Erik's. Step 5, the stage arithmetic by
-owner, is next.
+owner ([By owner, as built](#by-owner-as-built-measured-in-step-5)), is
+done; its Symmetry numbers are pending a run. Step 6, the review pass, is
+next.
 
 ## Purpose
 
@@ -78,7 +80,8 @@ existed:
   `similar(u0)` arrays, so device arrays work. The package must not
   require a particular array type. A faster path for a CPU `Array` is
   allowed alongside (amended 2026-09-24, see
-  [Stage arithmetic](#stage-arithmetic-decided-details-proposed)). On
+  [Stage arithmetic](#stage-arithmetic-decided-details-proposed)); it is
+  `partition`, since step 5. On
   Metal, a `Float32` `MtlArray` state runs with scalar indexing
   disallowed and agrees with the CPU bitwise (measured in step 4; [On a
   device](#on-a-device-measured-in-step-4)).
@@ -511,7 +514,10 @@ What step 2 settled (proposed in step 2):
   does not rest on it, and carries the docstring.
 - **`dt` is a required keyword**, and there is no default tableau.
 - **`init` refuses**, each with an `ArgumentError` that says why:
-  - a `partition` other than `nothing`, as not implemented yet (step 5);
+  - a `partition` other than `nothing`, as not implemented yet (step 5).
+    Since step 5 it refuses a partition for a state that is not a CPU
+    `Array`, and a malformed one ([By owner, as
+    built](#by-owner-as-built-measured-in-step-5); amended in step 5);
   - a state whose real element type is not an `AbstractFloat`, since the
     coefficients cannot be converted to it;
   - `t1 ≤ t0`, since the integration runs forward over a nonempty
@@ -678,8 +684,11 @@ tableau's structure anyway. This resolves "values or types".
 
 The plan is a heterogeneous tuple whose type records the tableau's
 nonzero pattern. `init` is therefore type-unstable, once, behind a
-function barrier. `step!` is type-stable and allocation-free, and it is
-unrolled over the stages. Measured in step 2: `@inferred step!` holds, and
+function barrier. `step!` is type-stable and, on the broadcast path,
+allocation-free, and it is unrolled over the stages. By owner it allocates
+a bound independent of the state size, and nothing at one thread
+(amended in step 5; [By owner, as
+built](#by-owner-as-built-measured-in-step-5)). Measured in step 2: `@inferred step!` holds, and
 a step allocates 0 bytes for every tableau, with `Float64`, `Float32` and
 `ComplexF64` states. On an Apple M3 at one thread, with trivial callbacks,
 an SSP3(4,3,3) step on 10⁶ `Float64` entries takes 6.1 ms. It makes 53
@@ -740,6 +749,11 @@ What else step 2 settled (proposed in step 2):
   array. No named tableau has either.
 - **First touch writes zero.** `init` fills each scratch array with
   `zero(eltype(u0))`, through the partition.
+- **`integ.u` is first-touched too** (proposed in step 5). By owner, and
+  unless `alias_u0 = true`, `init` makes `integ.u` as `similar(u0)` and
+  copies `u0` into it through the partition, where the broadcast path
+  calls `copy(u0)`. The state is read and written by every combination,
+  as the scratch is. An aliased `u0` stays where its caller put it.
 - **The plan checks itself.** `init` throws an internal error if the plan
   allocated other than `scratch_count(tab)` arrays, or if a term reads an
   array the pattern did not allocate.
@@ -772,8 +786,9 @@ per stage. So there are two paths:
 - **Broadcast, the default and the first to be implemented.** One fused
   broadcast per combination. It works for any array type, and on a
   device it already is a parallel kernel. On the host it is serial.
-- **By owner, for a CPU `Array` with more than one thread.** The caller
-  passes `partition`, a collection of `Threads.nthreads()` elements.
+- **By owner, for a CPU `Array` with more than one thread.** At one
+  thread it is accepted too, and is a plain loop (amended in step 5). The
+  caller passes `partition`, a collection of `Threads.nthreads()` elements.
   Element `c` is an iterable of `UnitRange{Int}` index ranges into `u`,
   owned by thread `c`.
   - Each combination is a plain loop over thread `c`'s ranges, run as a
@@ -804,6 +819,17 @@ ranges into their state vector. It is the same ownership rule
 `launch_by_owner!` already uses. Until TreeAMR has it, the caller builds
 the ranges from `threadchunks(nblocks)` and the set layout. This is a
 request to add to TreeGRRMHD's upstream list, not a dependency here.
+- Step 5 adds a helper that knows nothing of TreeAMR (proposed in step 5):
+  the internal, unexported `block_partition(blocks, segments)`. `blocks[c]`
+  is the range of block numbers thread `c` owns, one per thread, as
+  `threadchunks(nblocks)` gives them, padded with empty ranges to
+  `nthreads()`. `segments` holds one `(offset, blocklength)` per segment
+  of equal-sized consecutive blocks. Thread `c` then owns one range per
+  segment. A TreeAMR state vector is such a layout, one segment per field
+  set with `blocklength = N^D · nvars`, if its sets are concatenated; the
+  caller asserts that, not this package. The question stays open: the
+  helper is not exported until TreeAMR's own function exists or Erik
+  decides to export it.
 
 **Rejected:**
 - **Polyester** (`RK4(thread = True())`). TreeWave measured it as worse,
@@ -820,7 +846,185 @@ can come in a later step without changing the interface. In step 2 it is
 `(coefficient, array)` pairs and a per-element kernel that folds them
 left to right. `copy_state!`, `increment!` (`d = U − u★`) and
 `first_touch!` take the same last argument. `partition === nothing` is
-one `broadcast!` each; step 5 adds methods (proposed in step 2).
+one `broadcast!` each; step 5 adds methods (proposed in step 2). Step 5
+adds `lincomb_copy!(u★, U, x₀, terms, partition)` too, the fused pass
+that forms `u★` and `U` together. On the broadcast path it is `lincomb!`
+then `copy_state!`, exactly the two broadcasts of step 2, so that path is
+unchanged (amended in step 5).
+
+### By owner, as built (measured in step 5)
+
+`src/lincomb.jl`, for a CPU `Array` state. The numbers are from an Apple
+M3 Pro (6 performance and 6 efficiency cores, 12 CPU threads, 36 GB),
+under Julia 1.13.0 and 1.10.12.
+
+**The keyword** (proposed in step 5). `partition` is `nothing`, `:even`,
+or a collection of `Threads.nthreads()` elements. Element `c` is a unit
+range, or an iterable of unit ranges, of linear indices owned by
+default-pool thread `c`; it may be empty. Any `AbstractUnitRange` of
+integers is accepted and converted to `UnitRange{Int}`; a `StepRange`, a
+number or another symbol is refused. `init` sorts the nonempty ranges by
+their first index and walks them, so each refusal names the index: "the
+partition misses index 41 of the state (1:100): no thread owns it", "the
+partition doubles index 60: thread 1's range 1:60 and thread 2's range
+60:100 both own it", a range out of bounds, or the wrong number of
+elements. The checked form is an internal `OwnerPartition`, which `init`
+also accepts as it is, so that the tests can give it a hook.
+
+**Placement** (measured in step 5). Thread `c`'s ranges run in one sticky
+task placed by `jl_set_task_tid(task, threadpoolsize(:interactive) + c −
+1)`: the id is 0-based, and the default pool's ids follow the interactive
+pool's. The two versions differ in the default. With `--threads=4`, 1.13
+makes one interactive thread, so the default pool is ids 2–5 and the main
+task runs on id 1; 1.10 makes none, so the pool is ids 1–4 and the main
+task runs on default-pool thread 1. With `--threads=4,1` and
+`--threads=2,2` the two agree (ids 2–5, and 3–4). On both, a task placed
+on thread `c` reports `Threads.threadid()` equal to the offset plus `c`,
+whether it was placed from the main task, from inside `Threads.@spawn`, or
+from inside a `Threads.@threads :static` loop. `test/owner_tests.jl`
+records the id per range and checks it, at whatever thread count the
+suite runs.
+
+**One thread is a plain loop** (proposed in step 5), on the calling task,
+with no task, as in TreeAMR's `threaded_chunks`. On 1.13 the calling task
+is usually on the interactive thread, not on default-pool thread 1; the
+caller's own `threaded_chunks` at one thread runs there too.
+
+**Fresh tasks, not persistent workers** (proposed in step 5). Each
+combination makes one fresh sticky task per thread, waits for all of them,
+and then rethrows the first error, unwrapped from its
+`TaskFailedException` to what the loop threw. `PLAN.md` asked for
+persistent sticky workers instead if they reach zero allocations at no
+loss in speed. A prototype in `bench/stage_arithmetic.jl` does, for one
+combination: one worker per thread waiting on its own autoreset `Event`,
+the job a mutable object built once and called with the thread number,
+0 bytes per launch, and within noise of the fresh tasks in time (below).
+It is not taken, for what the prototype leaves out:
+- zero allocations need the job built once, so one job object per
+  combination in the plan; a job that is an immutable struct is boxed on
+  every launch (80 bytes, measured);
+- the workers must be process-wide, since an integrator per regrid with
+  workers of its own would leak them. So they need a lock, which
+  serializes concurrent `step!`s of different integrators, and they must
+  drop their reference to the last job, or it keeps that integrator's
+  arrays alive;
+- an interrupt or an error while the caller waits must not leave a
+  worker's completion count to the next launch, which fresh tasks get for
+  free.
+
+TreeAMR's own passes (`threaded_chunks`, and `@threads :static` under
+KernelAbstractions' static schedule) launch fresh tasks the same way, so
+a TreeGRRMHD right-hand side already allocates per pass as this does per
+combination (read from TreeAMR's source, not measured here).
+This is the step-5 decision most worth a second look, with the Symmetry
+numbers at 64 threads.
+
+**Forming `u★` writes `d_k` and `U` in one pass**, `lincomb_copy!`. So
+an SSP3(4,3,3) step is 9 combinations by owner, where the broadcast path
+makes 12 broadcasts, and 39 state-sized reads and writes instead of 42.
+At a stage with an empty row, `u★` is `integ.u` itself and only `U` is
+written, as on the broadcast path.
+
+**The loop is the broadcast's kernel** (measured in step 5). Each element
+is `LinComb(cs)(x₀[i], x₁[i], …)`, the broadcast's own callable, and the
+increment is `U[i] − u★[i]`, under `@inbounds @simd ivdep`. `@inbounds` is
+safe because every range lies in `1:n` and every array is checked to have
+length `n`, once per combination: a resized `integ.u` is a
+`DimensionMismatch`, not an out-of-bounds write. `ivdep` holds by the
+contract that `dst` may be `x₀` (and `d` may be `u★`) itself and no array
+otherwise overlaps another. It matters: without it, LLVM's runtime alias
+check sees `dst === x₀` in the update and in every increment and falls
+back to a scalar loop. At one thread, on 1.25 million entries, an
+in-place combination of 7 terms takes 1.82 ms without it and 1.09 ms with
+it, and the in-place increment 0.38 ms and 0.24 ms; the broadcast takes
+1.85 ms and 0.38 ms. Every other owner kernel is within a few percent of
+its broadcast, or faster.
+
+**Bitwise identity, tested and checked by mutation.** `owner_tests.jl`
+runs the seven tableaus and the three corner tableaus of the mechanics
+tests on `Float64`, `Float32` and `ComplexF64` states of 203 entries
+(`u′ = cos t − u²(1 + u)` with a stiff relaxation, and limiters that
+change the state), four steps each. The partitions are `:even`, a
+multi-set one from `block_partition` (three segments of 7 blocks, one
+range per set per thread) and an irregular one (ranges of 1 to 32
+entries, reversed within a thread, interleaved between threads, and a
+last thread with none). Every step is bitwise the broadcast's, at one and
+at four threads, on 1.10 and on 1.13. A second test folds
+`(1 + 2⁵⁴) − 2⁵⁴` and `−1 + (1 + 2⁻³⁰)(1 − 2⁻³⁰)` over 1027 entries,
+which are 0 only left to right and without an FMA. Mutations of the loop,
+each caught (failures in `owner_tests.jl` and `mechanics_tests.jl`
+together, at four threads on 1.13):
+- the terms reversed: 179 failures;
+- a `muladd` fold: 185;
+- a `@fastmath` fold: 185;
+- `U` not written in the fused pass: 78. It passed at first, since the
+  bitwise tests' solver writes all of `U`; the mock that checks `U = u★`
+  on entry, and a solver that writes half of `U`, were added for it;
+- the thread ids without the interactive offset: 18. That mutation is
+  invisible on 1.10 with `--threads=4`, whose offset is 0;
+- the overlap check removed: 2.
+
+**Allocations** (measured in step 5). At one thread a step allocates
+nothing, for every tableau and state type (a test). At more, each
+combination allocates 64 bytes and, per thread, the task and its
+closure: 403–433 bytes on 1.13 and 559–589 on 1.10, growing by about
+16 bytes per term of the combination. It is the same for 100 and for 10⁶
+entries, and for `Float64` and `ComplexF64`. So an SSP3(4,3,3) step,
+9 combinations, allocates `9 (64 + 413 nt)` bytes on 1.13: 15 456 at 4
+threads and 45 216 at 12, and 21 072 at 4 threads on 1.10. At 64 threads
+that is about 240 KB per step. The test asserts that the
+allocation is the same at 100 and at 100 000 entries, and at most
+`launches · (128 + 768 nt)` bytes.
+- Julia 1.10 needed one change for the one-thread claim: `check_lengths`
+  raised its error inline, and building the message allocated 32 bytes
+  per combination there even when nothing was wrong. The error is now
+  raised by a `@noinline` function.
+
+**Nesting** (a test). A partitioned `step!` called through
+`fetch(Threads.@spawn step!(integ))`, from a sticky task placed on the
+last thread, and from inside a `Threads.@threads :static` loop gives the
+broadcast's bits and runs each range on its owner.
+
+**The Mac numbers** (`bench/stage_arithmetic.jl`, Julia 1.13.0,
+`--threads=n`, so with one interactive thread besides; 10⁸ bytes, 12.5
+million `Float64`). Each entry is the least time of 20, and the least
+of two runs of the sweep; GB/s is from the counted reads and writes,
+without write-allocate. `update` is a combination of `x₀` and 7 terms
+into an array of its own, 9 passes; `step` is SSP3(4,3,3) with callbacks
+that return at once, 42 passes broadcast and 39 by owner; `launch` is
+`update` on 1000 entries per thread. The machine was not idle (load
+average 7.4–9.6 from other work), and the two runs differ by up to 19%.
+
+| threads | update, broadcast | update, owner | update, persistent | step, broadcast | step, owner | launch, owner / persistent |
+|---|---|---|---|---|---|---|
+| 1 | 16.1 ms, 56 GB/s | 10.1 ms, 89 GB/s | — | 60.4 ms, 70 GB/s | 47.3 ms, 82 GB/s | 0.5 µs / — |
+| 2 | 16.1 ms, 56 GB/s | 8.7 ms, 103 GB/s | 8.7 ms, 104 GB/s | 61.4 ms, 68 GB/s | 40.9 ms, 95 GB/s | 12 / 12 µs |
+| 4 | 17.0 ms, 53 GB/s | 9.0 ms, 100 GB/s | 8.7 ms, 103 GB/s | 60.1 ms, 70 GB/s | 38.1 ms, 102 GB/s | 12 / 13 µs |
+| 6 | 16.5 ms, 55 GB/s | 7.8 ms, 115 GB/s | 8.4 ms, 108 GB/s | 61.6 ms, 68 GB/s | 36.9 ms, 106 GB/s | 13 / 14 µs |
+| 8 | 16.0 ms, 56 GB/s | 8.0 ms, 113 GB/s | 8.3 ms, 108 GB/s | 59.9 ms, 70 GB/s | 35.6 ms, 110 GB/s | 17 / 17 µs |
+| 12 | 16.0 ms, 56 GB/s | 7.9 ms, 114 GB/s | 8.1 ms, 111 GB/s | 58.4 ms, 72 GB/s | 34.9 ms, 112 GB/s | 113 / 114 µs |
+
+- **By owner is faster at every thread count, one included.** At one
+  thread the owner loop over 8 operands streams 89 GB/s where the
+  broadcast streams 56 (the owner loop's LLVM code has vector `fmul`s;
+  why the broadcast is slower was not pursued), and the step is 22%
+  faster. At 8 and 12 threads the step is 1.7 times faster.
+- **The M3 Pro saturates early.** One core already streams 89 GB/s, and
+  more threads add at most 30% to that. Past six threads the extra ones
+  are efficiency cores, which macOS lets no process pin to, and an equal
+  split then waits for the slowest thread. At 12 threads the launch costs
+  113 µs, since with the interactive thread there are 13 threads for 12
+  cores; at 8 threads one run measured 110 µs and the other 17 µs. So the
+  counts past six are the M3's, and Symmetry's pinned run is the one that
+  says what the owner path is worth.
+- **Persistent workers are within noise of fresh tasks**, in time and in
+  launch cost, and allocate nothing; fresh tasks allocate the bytes in
+  the last column of the bench output (1040 at 2 threads to 5920 at 12,
+  per combination).
+
+**Symmetry** (pending a Symmetry run). `bench/symmetry_stage_arithmetic.sh`
+runs the same sweep on one AMD node at 1–64 threads: pinned with first
+touch, pinned and interleaved, and unpinned.
 
 ### File layout (decided)
 
@@ -843,7 +1047,15 @@ one `broadcast!` each; step 5 adds methods (proposed in step 2).
   checks their result (amended in step 2). Step 3 adds `order_tests.jl`,
   `stiff_tests.jl`, `ap_tests.jl`, `ssp_tests.jl` and `oracle_tests.jl`,
   one per validation group of [Testing](#testing-decided), and
-  `problems.jl`, the helpers they share (amended in step 3).
+  `problems.jl`, the helpers they share (amended in step 3). Step 5 adds
+  `owner_tests.jl`, the by-owner items of Mechanics, in a testset of its
+  own after `mechanics_tests.jl`, whose corner tableaus it reuses
+  (proposed in step 5).
+- `bench/`: `stage_arithmetic.jl`, the thread sweep of step 5, and
+  `symmetry_stage_arithmetic.sh`, its SLURM job, after TreeAMR's
+  `bench/symmetry_affinity.sh` (proposed in step 5). They run in the
+  package's own environment (`--project=.`), with only the standard
+  library's `Printf` besides.
 - Test-only dependencies are `[extras]` and `[targets]` in the root
   `Project.toml`, not a `test/Project.toml` (proposed in step 0). That
   is what `PLAN.md` specifies, and it keeps one file to read for the
@@ -1004,6 +1216,14 @@ failure mode it guards.
   - under a partition, each range is processed on its thread (a mock
     records `Threads.threadid()` per range);
   - a partition with a gap or an overlap is refused;
+  - these three are in `test/owner_tests.jl` (amended in step 5), with:
+    the traps of reassociation and FMA over a vectorized range; `U = u★`
+    on entry to `solve_imp!`, and NaN scratch, by owner; the combination
+    count per step and `init`'s first touch, by the hook; nesting inside
+    `@spawn`, a sticky task and `@threads :static`; an error on a worker
+    reaching the caller as itself, after every worker has finished; a
+    resized `integ.u` refused; `@inferred step!`; and the allocations of
+    [By owner, as built](#by-owner-as-built-measured-in-step-5);
   - a Float32 run works;
   - also (amended in step 2): three tableaus of a caller's own reach the
     plan's corner cases, the extra array, an empty-row solving stage and a
