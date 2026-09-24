@@ -33,12 +33,52 @@ broadcasts, and supports Julia 1.10 and later.
 `CODE.md` is the design document: the requirements, the method, the
 package design, why an existing package does not fit, and the test plan.
 
+## Example
+
+Scalar relaxation in each of three cells, `u′ = cos t − (u − ū)/ε`, with
+the forcing `cos t` explicit and the stiff relaxation toward `ū`
+implicit. The stage equation `U = u★ − γΔt (U − ū)/ε` has a closed form,
+so the stage solver is a single broadcast:
+
+```julia
+using IMEXRungeKutta
+
+# The explicit part, f(u, t) = cos t.
+f_exp!(du, u, p, t) = (du .= cos(t); nothing)
+
+# The implicit stage: U = u★ + γΔt g(U, t) with g(u) = −(u − ū)/ε.
+function solve_imp!(U, u★, γΔt, p, t)
+    λ = γΔt / p.ε
+    @. U = (u★ + λ * p.ū) / (1 + λ)
+    return nothing
+end
+
+p = (ε = 1e-6, ū = [1.0, 2.0, 3.0])
+prob = IMEXProblem(f_exp!, solve_imp!, copy(p.ū), (0.0, 1.0), p)
+integ = solve(prob, ARS443(); dt = 0.01)
+
+integ.t                         # 1.0, exactly, after integ.nstep == 100 steps
+(integ.u .- p.ū) ./ p.ε         # ≈ cos(1) = 0.5403 in each cell
+```
+
+`solve` returns the integrator. For a chunked driver, `init` it once per
+chunk and call `step!(integ)` or `solve!(integ)`; `integ.u` may be changed
+in place between steps. `init` also takes `stage_limiter` and
+`step_limiter`, with OrdinaryDiffEq's signature `(u, integ, p, t)`.
+
+ARS(4,4,3) is stiffly accurate, so as `ε → 0` each step ends on the
+quasi-steady state `u ≈ ū + ε cos t`. SSP3(4,3,3), the intended
+production scheme, is not: in that limit its result is off it by `O(Δt)`,
+here by about `−0.28 Δt cos t` (see `CODE.md`, "Tableaus").
+
 ## Status
 
-**The tableaus exist; the integrator does not yet.** `IMEXTableau` and
-the seven named tableaus (`IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP2332`,
-`IMEXSSP3332`, `IMEXSSP3433`, `ARS222`, `ARS443`) are in place. Their order, stiff
-accuracy, L-stability and SSP coefficient are computed and tested, and
-recorded in `CODE.md`. `PLAN.md` breaks the rest into steps: the
-integrator next, then its validation, and a 0.1.0 release. There is no
-worked example until the integrator exists.
+**The integrator exists, on the broadcast path.** `IMEXProblem`, `init`,
+`step!`, `solve!` and `solve` are in place, with the stage and step
+limiters, for all seven named tableaus (`IMEXSSP222`, `IMEXSSP2322`,
+`IMEXSSP2332`, `IMEXSSP3332`, `IMEXSSP3433`, `ARS222`, `ARS443`) and a
+caller's own `IMEXTableau`. `step!` is type-stable and allocation-free.
+The tableaus' order, stiff accuracy, L-stability and SSP coefficient are
+computed, tested, and recorded in `CODE.md`. `PLAN.md` breaks the rest
+into steps: the validation next, then a 0.1.0 release, then the by-owner
+stage arithmetic for threaded CPU arrays.
