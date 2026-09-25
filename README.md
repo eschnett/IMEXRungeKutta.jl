@@ -74,7 +74,11 @@ integ.t                         # 1.0, exactly, after integ.nstep == 100 steps
 `solve` returns the integrator. For a chunked driver, `init` it once per
 chunk and call `step!(integ)` or `solve!(integ)`; `integ.u` may be changed
 in place between steps. `init` also takes `stage_limiter` and
-`step_limiter`, with OrdinaryDiffEq's signature `(u, integ, p, t)`.
+`step_limiter`, with OrdinaryDiffEq's signature `(u, integ, p, t)`. Unlike
+in OrdinaryDiffEq's SSPRK methods, a stage limiter's change reaches the
+result only through the explicit evaluations. Pass a correction that must
+hold in the state, such as an atmosphere reset, as `step_limiter` too
+(`CODE.md`, "One step").
 
 ARS(4,4,3) is stiffly accurate, so as `ε → 0` each step ends on the
 quasi-steady state `u ≈ ū + ε cos t`. SSP3(4,3,3), the intended

@@ -14,9 +14,12 @@ The problem `u′ = f(u, t) + g(u, t)` on `t0 ≤ t ≤ t1`, `u(t0) = u0`, with
 - `solve_imp!(U, u★, γΔt, p, t)` writes `U` so that
   `U = u★ + γΔt g(U, t)`, by any means. `U` and `u★` are distinct arrays;
   on entry `U` holds a copy of `u★`, so the solver need only write the
-  components it solves for, and `u★` must not be changed. `γΔt` has the
-  state's real type `T`, and `t` the time type. The return value is
-  ignored.
+  components it solves for, and `u★` must not be changed. No limiter has
+  seen `u★`, so it may be inadmissible. A solver that needs an admissible
+  state repairs its own view of it, and still writes into `U` only what
+  it solves for: a repair written into `U` would become part of the
+  implicit increment. `γΔt` has the state's real type `T`, and `t` the
+  time type. The return value is ignored.
 
 It is called once per implicit stage; there is no nonlinear-solver loop,
 tolerance or retry here, and convergence, fallbacks and counters belong to
@@ -148,9 +151,13 @@ Build an integrator for `prob` with the tableau `tab` (such as
   `step_limiter!(u, integ, p, t)`, change `u` in place; `nothing` means
   no call. The stage limiter is called on the stage value just before
   each `f_exp!` call, on a scratch array, never on `integ.u`, and not at
-  a trivial stage (where `f_exp!` reads `integ.u` itself). The step
+  a trivial stage (where `f_exp!` reads `integ.u` itself). Its change
+  reaches `uⁿ⁺¹` only through `f_exp!`, unlike in OrdinaryDiffEq's SSPRK
+  methods, so a correction that must hold in the state, such as an
+  atmosphere reset, is passed as the step limiter too. The step
   limiter is called once per step on `integ.u`, which then holds `uⁿ⁺¹`,
-  at `tⁿ⁺¹`; `integ.t` and `integ.nstep` advance after it returns.
+  at `tⁿ⁺¹`; `integ.t` and `integ.nstep` advance after it returns. See
+  `CODE.md`, "One step".
 - **`alias_u0 = true`** makes `integ.u` be `u0` itself, which saves one
   state-sized array; by default `u0` is copied.
 - **`partition`** chooses the stage arithmetic. `nothing`, the default,

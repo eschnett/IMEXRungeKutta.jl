@@ -81,8 +81,10 @@ existed:
     `IMEXSSP2322`, ClimaTimeSteppers' `SSP322`).
   - `IMEXSSP2332` is SSP2(3,3,2) (decided). It is in neither upstream.
 - **A stage limiter hook** and a step limiter hook. These are
-  positivity- or atmosphere-type resets of the state, as in the SSPRK
-  methods of OrdinaryDiffEqSSPRK.
+  positivity- or atmosphere-type resets of the state, with the signature
+  of the SSPRK methods of OrdinaryDiffEqSSPRK. What a stage limiter's
+  correction reaches differs from theirs (amended 2026-09-25; see
+  [One step](#one-step-decided)).
 - **Fixed `Δt`.** The caller chooses the step, typically from a CFL
   condition, and restarts a fresh integrator after a regrid.
 - **Generic arrays.** Stage arithmetic is by broadcasting over
@@ -406,10 +408,20 @@ limited stage value is read by `f_exp!` and by nothing else: the
 increment is taken before the limiter, and the update reads only
 increments and tendencies. So at a stage that is not explicit-used,
 such as stage 1 of SSP3(4,3,3), a limiter call would be dead work. It is
-skipped. This differs from OrdinaryDiffEq's SSPRK methods, which limit
-every stage. There, every stage is read by `f`, so they limit exactly
-what `f` reads too. A caller who wants the step's result limited as well
-passes the same function as `step_limiter!`.
+skipped.
+
+**So a stage limiter's correction reaches `uⁿ⁺¹` only through `f_exp!`**
+(amended 2026-09-25). This differs from OrdinaryDiffEq's SSPRK methods,
+and from every method written in Shu–Osher form. There a stage value is
+also the base of the next stage and of the result, so its correction
+persists. In `SSPRK33` a correction reaches `uⁿ⁺¹` with weight 1/6, 2/3
+or 1, by stage (measured by TreeHydro, step 9). This section said that
+those methods "limit exactly what `f` reads"; that is true of where they
+limit, not of where the correction goes. A caller whose correction must
+hold in the state, such as an atmosphere reset, passes the same function
+as `step_limiter!` too. Limiting the final update separately is also the
+remedy that Kuzmin et al. (2022) prescribe for Butcher-form methods (see
+[Limiters in other codes](#limiters-in-other-codes-surveyed-2026-09-25)).
 
 Three consequences of the stage contract, each one a decision:
 
@@ -417,7 +429,7 @@ Three consequences of the stage contract, each one a decision:
   correction is a reset, not a tendency. Folded into `k_k`, it would be
   re-weighted by `a_jk/a_kk` in later stages and by `b_k/a_kk` in the
   update. ClimaTimeSteppers does fold it in: its `constrain_state!` runs
-  before its `(U − temp)/dtγ`.
+  before its `(U − temp)/dtγ`. The weights are below.
 - **One call per implicit stage** (decided). Convergence, fallbacks,
   flags and counters belong to the user's solver. The integrator has no
   nonlinear-solver loop, tolerance or retry.
@@ -426,6 +438,36 @@ Three consequences of the stage contract, each one a decision:
   exactly zero, and the
   component evolves by the explicit part alone, to the last bit. A
   conservative explicit scheme stays conservative. This is a test.
+
+**What folding a correction into the tendency would cost** (computed
+2026-09-25 from `src/tableaus.jl`). Take a correction `δ` made at stage
+`k` and folded into `d_k`. There are two cases:
+- **A component that `solve_imp!` leaves alone**, which is where an
+  atmosphere reset acts. The correction reaches `uⁿ⁺¹` as `(b_k/a_kk) δ`
+  and a later stage `j` as `(a_jk/a_kk) δ`.
+- **A component that it solves for**, in the stiff limit. Later solves
+  absorb what the correction adds to their `u★`, and the net weight in
+  `uⁿ⁺¹` is `(bᵀA⁻¹)_k`.
+
+| Tableau | `b_k/a_kk` | `bᵀA⁻¹` |
+|---|---|---|
+| SSP2(2,2,2) | 1.707, 1.707 | −0.707, 1.707 |
+| SSP2(3,2,2) | 0, 1, 1 | 0, 0, 1 |
+| SSP2(3,3,2) | 1.333, 1.333, 1 | 0, 0, 1 |
+| SSP3(3,3,2) | 0.569, 0.569, 2.276 | −1.845, 0.569, 2.276 |
+| SSP3(4,3,3) | 0, 0.690, 0.690, 2.758 | −1.177, −0.487, −0.095, 2.758 |
+| ARS(2,2,2) | –, 2.414, 1 | – (`a_11 = 0`) |
+| ARS(4,4,3) | –, 3, −3, 1, 1 | – (`a_11 = 0`) |
+
+For SSP3(4,3,3), `a_jk/a_kk` ranges from −1 to 3.137. Suppose a momentum
+is reset to zero at SSP3(4,3,3)'s last stage, and the reset is folded in.
+Then 2.758 times the stage momentum is subtracted from the result, which
+leaves it near −1.76 times that value. A negative weight turns a floor
+that raises a density into one that lowers the result. No tableau here
+has weight 1 at every stage. Only the last stage of a stiffly accurate
+part does. Of the codes that fold a correction in, Most & Dunham (2026)
+default to such a scheme, and KORAL does it with SSP2(2,2,2)
+([Limiters in other codes](#limiters-in-other-codes-surveyed-2026-09-25)).
 
 **Round-off in the recovered increment.** `d_k = U − u★` carries an
 absolute error of about `ε|U|`. It enters the update multiplied by
@@ -438,6 +480,109 @@ Skipping zero columns, SSP3(4,3,3) makes three explicit evaluations per
 step, not four; OrdinaryDiffEqSDIRK makes five (below). Increments are
 stored only for implicit-used stages, and explicit tendencies only for
 explicit-used ones.
+
+### Limiters in other codes (surveyed 2026-09-25)
+
+This survey checks the limiter decisions above against the target
+applications: resistive GRMHD codes, relativistic resistive MHD codes,
+and the methods literature. Agents read the papers and, where it is
+public, the code; the Einstein Toolkit's MoL was read here. Each entry
+says which:
+- *source*: read in the code;
+- *stated*: stated in the paper;
+- *inferred*: a reading of either.
+
+Nothing was run.
+
+**Most papers do not say.** These write the stiff term as `R(U⁽ⁱ⁾)` and
+say nothing about where their atmosphere or floors act relative to the
+stages:
+- Palenzuela et al. (2009, 2013);
+- WhiskyRMHD (Dionysopoulou et al. 2013, 2015);
+- ECHO (Bucciantini & Del Zanna 2013; Del Zanna et al. 2016; Tomei et
+  al. 2020);
+- the GRaM-X resistive module (Azizi et al. 2025);
+- BAM (2026).
+
+Nearly all use SSP2(2,2,2) or SSP3(4,3,3) in Butcher form, with only `E`
+implicit and the primitive recovery iterated inside the stage solve. None
+reports a failure tied to where the tendency is taken relative to a
+limiter.
+
+**Where it can be seen:**
+
+| Code | Where fixes act | Stiff tendency | Does a stage fix reach `uⁿ⁺¹`? |
+|---|---|---|---|
+| PLUTO, gPLUTO (source) | con2prim writes its fixes into the stage value after each explicit combination, before the solve | recovered, `(E − E★)/(a_kk Δt)`, from the repaired predictor; a direct evaluation is commented out | only through the tendencies; the fix at the step's end persists |
+| SpECTRE's IMEX (source) | after the solve | evaluated again at the corrected state | only through the tendencies |
+| HARM, rHARM, grim, KHARMA (source) | after each stage of a predictor–corrector anchored at `Uⁿ` | not stored | a half-step fix only through the corrector's evaluations |
+| ET MoL RK4 and GenericRK (source) | `MoL_PostStep`, after each substep | – | only through the right-hand side: the stage is copied before `MoL_PostStep` |
+| ET MoL RK2 and RK3, OrdinaryDiffEq SSPRK, TreeHydro (source) | on each stage value | – | yes: in Shu–Osher form the stage is the base of the next |
+| BHAC (stated) | inside the implicit inversion; `E` recomputed from the floored `v` | ImEx12 stores none | through the implicit `E` |
+| Most & Dunham 2026 (stated) | predictor projected before the solve; floors after it | recovered from the floored state | yes, folded in; the default scheme is stiffly accurate |
+| KORAL, `koral_lite` (source) | floors on the primitives only; fixups inside the implicit operator | recovered after the fixups | floors: once per step; fixups: folded in, with SSP2(2,2,2) |
+| ClimaTimeSteppers (source) | `constrain_state!` before the tendency | recovered after it | yes, folded in |
+| MIR (inferred) | before and after con2prim | SSP2(2,2,2) as one MoL right-hand side, stage 2 from `3Uⁿ − 2U⁽¹⁾` | a fix to `U⁽¹⁾` enters stage 2 with weight −2 |
+| METHOD (source) | no floors | evaluated at the stage value | – |
+
+So practice is split, and mostly unstated. PLUTO is the closest in design:
+Butcher form, a per-cell solve, and increments recovered from the solve.
+It does what this package does. In addition it repairs the predictor
+before the solve, which here is the solver's own business
+([The callback contracts](#the-callback-contracts-decided)).
+
+**The methods literature limits stage values, and that needs other
+tableaus.** Bound-preserving limiters act on the stage value in
+Shu–Osher or incremental form: the limited stage is the base of the next
+one, and each stage and the result are convex combinations of admissible
+states (Zhang, Xia & Shu 2012; Ern & Guermond 2022, and 2023 for IMEX).
+That is not available with these tableaus:
+- Rewriting a type-A IMEX scheme with recovered tendencies in Shu–Osher
+  form gives coefficients from `A⁻¹` (Hu, Shu & Zhang 2018). For
+  SSP2(2,2,2) one of them is `1 − √2`.
+- High-order convex-invariant IMEX schemes with a CFL condition from
+  transport alone do not exist (Chu et al. 2019).
+- IMEX-SSP3(3,3,2) goes negative on a stiff damping problem (Chertock et
+  al. 2015).
+
+For Butcher-form methods, Kuzmin et al. (2022) limit the final update
+separately, which is the step limiter here.
+
+**Constraints as stiff terms.** Force-free codes used to project
+`E·B → 0` and cap `E ≤ B` after every substep (Palenzuela et al. 2010).
+They gave that up:
+- the projections gave locally wrong, discontinuous currents (Alic et al.
+  2012);
+- they reduce the scheme to first order in time (Kim et al. 2024).
+
+These codes now drive the constraints with stiff currents in the
+implicit part (Alic et al. 2012; Palenzuela 2013; Kim et al. 2024). Here
+such a term belongs in `solve_imp!`, and its effect is an increment like
+any other.
+
+**No lower bound on η.** Evaluating `R ∝ 1/η` at the stage value fails at
+`η = 0`. So ECHO's papers and PLUTO's follow-ups impose a lower bound
+(Bucciantini & Del Zanna 2013; Bugli et al. 2014; Mattia et al. 2024;
+Bugli et al. 2025). No `1/η` appears in this integrator, so `σ = ∞` is an
+ordinary stage solve, TreeGRRMHD's `IdealConductor`. Whether the solver
+copes there is the solver's business. PLUTO's stated reason for recovering
+its increments is a different one: discrete charge conservation (Mignone et
+al. 2019).
+
+**Two abscissae, again.** The agents found two more codes that run a
+stage at the wrong abscissa, both in the code and not checked here:
+- SpECTRE's IMEX runs the implicit solve at the explicit time, so
+  SSP3(4,3,3)'s stage-1 solve is at `c̃_1 = 0` rather than `c_1 = α`;
+- KORAL passes `t` to both explicit evaluations of SSP2(2,2,2), although
+  `c̃_2 = 1`.
+
+Like #4620, neither shows where the right-hand side does not depend on
+`t`.
+
+**Not measured anywhere.** Would carrying a stage fix forward change the
+answer? TreeHydro named a star in a vacuum as the case where it could
+(its step 9). No code or paper found measures it. TreeGRRMHD's TOV test
+is the place ([Open questions](#open-questions)).
 
 ## Package design
 
@@ -555,6 +700,17 @@ What step 2 settled (proposed in step 2, decided 2026-09-24):
     [The stage plan and storage](#the-stage-plan-and-storage-decided)).
   - **On entry, `U` holds a copy of `u★`** (decided), so the solver
     writes only the components it solves for.
+  - **`u★` may be inadmissible** (amended 2026-09-25). It is formed from
+    `uⁿ` and the stored tendencies and increments, and no limiter has
+    seen it: the stage limiter acts after the solve, on what `f_exp!`
+    reads. A solver that needs an admissible state repairs its own view
+    of `u★`, as TreeGRRMHD's Ohm solve does through `con2prim_safe`. It
+    still writes into `U` only the components it solves for. A repair
+    written back into `U` would become part of `d_k`, with the weights in
+    [One step](#one-step-decided). PLUTO repairs its predictor before the
+    solve and takes the increment from the repaired state, which amounts
+    to the same thing
+    ([Limiters in other codes](#limiters-in-other-codes-surveyed-2026-09-25)).
   - Its return value is ignored.
 - **`stage_limiter!(u, integrator, p, t)` and
   `step_limiter!(u, integrator, p, t)`** (decided) change `u` in place.
@@ -573,8 +729,11 @@ writes every component anyway.
 
 **Why the limiter takes OrdinaryDiffEq's signature.** OrdinaryDiffEq's
 SSPRK methods call `(u, integrator, p, t)`, and so the limiters already
-written for them, such as TreeHydro's, work unchanged. What the
-integrator argument promises:
+written for them, such as TreeHydro's, work unchanged. The signature
+carries over, but the reach does not. Under `SSPRK33`, TreeHydro's reset
+reaches the result from every stage. Here it reaches the result only as
+the step limiter ([One step](#one-step-decided); amended 2026-09-25).
+What the integrator argument promises:
 - **Only the public fields are meaningful** (see
   [The interface](#the-interface-decided)).
 - **During a step**, `integrator.u` is `uⁿ` and `integrator.t` is `tⁿ`,
@@ -1694,6 +1853,15 @@ Deferred:
   implicit part, the last stage's tendency is `g(uⁿ⁺¹)`, which could make
   ESDIRK-type tableaus admissible. It is invalid once a step limiter has
   changed `u`. Not planned.
+- **Whether a stage limiter's correction should persist** (added
+  2026-09-25). Here it reaches `uⁿ⁺¹` only through `f_exp!`
+  ([One step](#one-step-decided)). Folding it into the tendency is ruled
+  out by the weights there. Persistence in Shu–Osher form would need a
+  Shu–Osher representation of each tableau, which for these has negative
+  coefficients
+  ([Limiters in other codes](#limiters-in-other-codes-surveyed-2026-09-25)).
+  Revisit if TreeGRRMHD's TOV test, a star in a vacuum, shows a
+  difference between a per-stage and a per-step atmosphere reset.
 
 ## References
 
@@ -1712,3 +1880,50 @@ Deferred:
   (the tableaus), #4620 (the abscissa bug).
 - ClimaTimeSteppers.jl, `src/solvers/imex_ssprk.jl` and
   `src/solvers/imex_ark.jl`.
+
+For [Limiters in other codes](#limiters-in-other-codes-surveyed-2026-09-25):
+- **Resistive MHD codes:**
+  - A. Mignone, G. Mattia, G. Bodo and L. Del Zanna, *A constrained
+    transport method for the solution of the resistive relativistic MHD
+    equations*, MNRAS 486 (2019) 4252, arXiv:1904.01530 (PLUTO); gPLUTO
+    v0.91, `Src/ResRMHD/imex_source.cpp` and `rk_step_imex.cpp`.
+  - B. Ripperda et al., *General-relativistic resistive
+    magnetohydrodynamics with robust primitive-variable recovery for
+    accretion disk simulations*, ApJS 244 (2019) 10, arXiv:1907.07197
+    (BHAC).
+  - N. Bucciantini and L. Del Zanna, *A fully covariant mean-field dynamo
+    closure for numerical 3+1 resistive GRMHD*, MNRAS 428 (2013) 71,
+    arXiv:1205.2951 (ECHO); M. Bugli, L. Del Zanna and N. Bucciantini,
+    MNRAS 440 (2014) L41, arXiv:1401.4060; Tomei et al.,
+    arXiv:1911.01838.
+  - K. Dionysopoulou et al., *General-relativistic resistive
+    magnetohydrodynamics in three dimensions: formulation and tests*, PRD
+    88 (2013) 044020, arXiv:1208.3487 (WhiskyRMHD); C. Palenzuela, MNRAS
+    431 (2013) 1853, arXiv:1212.0130.
+  - Azizi et al., arXiv:2510.18968 (GRaM-X, resistive); Franceschetti &
+    De Pietri, arXiv:2503.01408 (MIR); Most & Dunham, arXiv:2609.21923;
+    Mattia et al., arXiv:2407.11581; Bugli et al., arXiv:2410.20924.
+- **Force-free codes:**
+  - C. Palenzuela et al., PRD 82 (2010) 044045, arXiv:1007.1198;
+  - D. Alic et al., *Accurate simulations of binary black hole mergers in
+    force-free electrodynamics*, ApJ 754 (2012) 36, arXiv:1204.2226;
+  - Kim et al., arXiv:2404.01531 (SpECTRE).
+- **Other codes:** SpECTRE (`src/Evolution/Imex/`); KORAL (`koral_lite`);
+  grim, arXiv:1702.01106; KHARMA, arXiv:2408.01361; METHOD,
+  github.com/AlexJamesWright/METHOD; the Einstein Toolkit's `MoL` thorn
+  (`RK2.c`, `RK3.c`, `RK4.c`, `GenericRK.c`).
+- **Methods:**
+  - X. Zhang, Y. Xia and C.-W. Shu, J. Sci. Comput. 50 (2012) 29;
+  - J. Hu, R. Shu and X. Zhang, SIAM J. Numer. Anal. 56 (2018) 942,
+    arXiv:1708.06279;
+  - R. Chu, E. Endeve, C. D. Hauck and A. Mezzacappa, J. Comput. Phys.
+    (2019), arXiv:1809.06949;
+  - A. Chertock, S. Cui, A. Kurganov and T. Wu, SIAM J. Numer. Anal. 53
+    (2015) 2008;
+  - D. Kuzmin, M. Quezada de Luna, D. I. Ketcheson and J. Grüll,
+    *Bound-preserving flux limiting for high-order explicit Runge–Kutta
+    time discretizations of hyperbolic conservation laws*, J. Sci.
+    Comput. 91 (2022) 21, arXiv:2009.01133;
+  - A. Ern and J.-L. Guermond, *Invariant-domain-preserving high-order
+    time stepping*, I (explicit Runge–Kutta), SIAM J. Sci. Comput. 44
+    (2022) A3366, and II (IMEX), 45 (2023) A2511.
