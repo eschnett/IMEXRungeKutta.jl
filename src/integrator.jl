@@ -19,7 +19,9 @@ The problem `u′ = f(u, t) + g(u, t)` on `t0 ≤ t ≤ t1`, `u(t0) = u0`, with
   state repairs its own view of it, and still writes into `U` only what
   it solves for: a repair written into `U` would become part of the
   implicit increment. `γΔt` has the state's real type `T`, and `t` the
-  time type. The return value is ignored.
+  time type. The return value is ignored. It may be `nothing` for a
+  tableau that makes no stage solve, such as [`RK4`](@ref)`()`; `init`
+  refuses `nothing` for any other.
 
 It is called once per implicit stage; there is no nonlinear-solver loop,
 tolerance or retry here, and convergence, fallbacks and counters belong to
@@ -158,6 +160,9 @@ Build an integrator for `prob` with the tableau `tab` (such as
   limiter is called once per step on `integ.u`, which then holds `uⁿ⁺¹`,
   at `tⁿ⁺¹`; `integ.t` and `integ.nstep` advance after it returns. See
   `CODE.md`, "One step".
+- **`solve_imp! = nothing`** in `prob` is refused unless `tab` makes no
+  stage solve, as the explicit [`Euler`](@ref), [`RK4`](@ref) and
+  [`SSPRK33`](@ref) do.
 - **`alias_u0 = true`** makes `integ.u` be `u0` itself, which saves one
   state-sized array; by default `u0` is copied.
 - **`partition`** chooses the stage arithmetic. `nothing`, the default,
@@ -208,6 +213,12 @@ function CommonSolve.init(prob::IMEXProblem, tab::IMEXTableau; dt,
         throw(ArgumentError("init: dt = $dt must be positive and finite"))
     nsteps = step_count(t0, t1, dt)
     Δt = (t1 - t0) / nsteps
+    nsolves = count(solves(tab))
+    (nsolves == 0 || prob.solve_imp! !== nothing) ||
+        throw(ArgumentError("init: the problem's solve_imp! is nothing, but the tableau \
+                             $(tab.name) makes $nsolves stage solves per step, and \
+                             the integrator never evaluates g itself; nothing is only \
+                             for a purely explicit tableau such as RK4()"))
     part = resolve_partition(u0, partition)
     u = alias_u0 ? u0 : copy_initial(u0, part)
     plan = build_plan(tab, u, u0, T, Δt, part)

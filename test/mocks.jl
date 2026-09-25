@@ -4,6 +4,7 @@
 # in `CLAUDE.md`).
 
 using IMEXRungeKutta: IMEXRungeKutta
+using IMEXRungeKutta: Euler, RK4, SSPRK33
 
 # One entry per callback call: which callback, its time, its array
 # argument (`u` for `f_exp!` and the limiters, `U` for `solve_imp!`), and
@@ -100,7 +101,7 @@ function mock_integrator(tab, u0; tspan = (0.0, 1.0), dt = 0.1, kwargs...)
                 step_limiter = mock_step_limiter!, kwargs...)
 end
 
-# The seven named tableaus, with the calls one step makes, counted by hand
+# The seven IMEX tableaus, with the calls one step makes, counted by hand
 # from "One step" in `CODE.md`, and the scratch count of "Measured
 # properties" there.
 const CALL_COUNTS = [
@@ -114,4 +115,13 @@ const CALL_COUNTS = [
     (make = ARS222, f_exp = 2, solve_imp = 2, stage_limiter = 1, scratch = 5),
     (make = ARS443, f_exp = 4, solve_imp = 4, stage_limiter = 3, scratch = 9),
 ]
-const NAMED_TABLEAUS = [spec.make for spec in CALL_COUNTS]
+# The three purely explicit tableaus: no solve, and a trivial first stage
+# that calls `f_exp!` on `integ.u` itself with no stage limiter. Explicit
+# Euler forms no stage value, so it has no `U` either.
+const EXPLICIT_CALL_COUNTS = [
+    (make = Euler, f_exp = 1, solve_imp = 0, stage_limiter = 0, scratch = 1),
+    (make = RK4, f_exp = 4, solve_imp = 0, stage_limiter = 3, scratch = 5),
+    (make = SSPRK33, f_exp = 3, solve_imp = 0, stage_limiter = 2, scratch = 4),
+]
+const ALL_CALL_COUNTS = [CALL_COUNTS; EXPLICIT_CALL_COUNTS]
+const NAMED_TABLEAUS = [spec.make for spec in ALL_CALL_COUNTS]

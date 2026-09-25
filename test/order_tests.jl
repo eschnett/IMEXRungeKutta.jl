@@ -1,6 +1,7 @@
 using IMEXRungeKutta: IMEXProblem
 using IMEXRungeKutta: IMEXSSP222, IMEXSSP2322, IMEXSSP2332, IMEXSSP3332, IMEXSSP3433
 using IMEXRungeKutta: ARS222, ARS443
+using IMEXRungeKutta: Euler, RK4, SSPRK33
 
 # The observed order of every tableau on two problems, each with an
 # implicit part `−u` whose stage solve is `U = u★/(1 + γΔt)` ("Testing",
@@ -71,5 +72,41 @@ end
         p = finest_order(errs)
         @test abs(p - spec.order) < 0.1
         @test abs(p - spec.forced) < 0.005
+    end
+end
+
+# The purely explicit tableaus on the same two problems, now all explicit
+# and with no stage solver: `u′ = (i − 1)u`, which depends on `u`, and
+# `u′ = cos t − u`, which also depends on `t` and so sees the explicit
+# abscissae ("Explicit tableaus" in `CODE.md`). The measured orders are
+# recorded, as for the IMEX tableaus (measured with the explicit tableaus).
+explicit_rotate!(du, u, p, t) = (du .= (im - 1) .* u; nothing)
+explicit_forced!(du, u, p, t) = (du .= cos(t) .- u; nothing)
+
+function explicit_order(tab, f!, u0, exact)
+    errs = map(ORDER_DTS) do dt
+        integ = solve(IMEXProblem(f!, nothing, [u0], (0.0, 1.0)), tab; dt)
+        return abs(integ.u[1] - exact(1.0))
+    end
+    return finest_order(errs)
+end
+
+const EXPLICIT_ORDER_TABLE = [
+    (make = Euler, order = 1, rotate = 1.009, forced = 1.002),
+    (make = RK4, order = 4, rotate = 4.011, forced = 4.004),
+    (make = SSPRK33, order = 3, rotate = 3.011, forced = 3.006),
+]
+
+# A mis-weighted or mistimed stage of an explicit tableau, or a stage
+# value formed from the wrong arrays, drops its order.
+@testset "Each explicit tableau has its order on u′ = (i − 1)u and u′ = cos t − u, ±0.1" begin
+    for spec in EXPLICIT_ORDER_TABLE
+        tab = spec.make()
+        p = explicit_order(tab, explicit_rotate!, 1.0 + 0.0im, order_exact_rotate)
+        q = explicit_order(tab, explicit_forced!, 1.0, order_exact_forced)
+        @test abs(p - spec.order) < 0.1
+        @test abs(q - spec.order) < 0.1
+        @test abs(p - spec.rotate) < 0.005
+        @test abs(q - spec.forced) < 0.005
     end
 end

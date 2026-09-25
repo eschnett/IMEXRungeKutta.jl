@@ -87,7 +87,7 @@ function random_state(::Type{T}, n) where {T}
     return u .* map(x -> real(T)(2)^(-20 * x), rand(real(T), n))
 end
 
-all_tableaus() = [[spec.make() for spec in CALL_COUNTS];
+all_tableaus() = [[spec.make() for spec in ALL_CALL_COUNTS];
                   [spec.tab for spec in CORNER_TABLEAUS]]
 
 # A per-element kernel that differed from the broadcast's, in its term

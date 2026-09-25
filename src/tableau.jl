@@ -25,8 +25,9 @@ differ in general: an explicit evaluation of stage `k` is at
 The coefficients are held exactly, as `R = Rational{BigInt}`, when every
 one given is an integer or a rational, and otherwise as 256-bit `BigFloat`.
 They are converted to the state's arithmetic type once, when an integrator
-is built. The seven named tableaus ([`IMEXSSP3433`](@ref) and the others)
-go through this constructor, and so does a caller's own.
+is built. The ten named tableaus ([`IMEXSSP3433`](@ref), [`RK4`](@ref)
+and the others) go through this constructor, and so does a caller's own.
+A purely explicit one has `A = 0` and `b = 0`.
 
 The constructor refuses, with an `ArgumentError` that says why:
 - parts that are not square and of one size `s ≥ 1`, or weights that are
@@ -224,9 +225,9 @@ end
     scratch_count(tab::IMEXTableau)
 
 The number of state-sized scratch arrays the stage plan needs, besides
-`integ.u`: `U`, one per implicit-used stage, one per explicit-used stage,
-and one more if some solving stage that is not implicit-used has a
-nonempty row. `u★` is otherwise formed in the array that then holds `d_k`,
+`integ.u`: `U` if [`needs_U`](@ref), one per implicit-used stage, one per
+explicit-used stage, and one more if some solving stage that is not
+implicit-used has a nonempty row. `u★` is otherwise formed in the array that then holds `d_k`,
 and a stage with an empty row has `u★ = uⁿ`, which is `integ.u` itself
 ("The stage plan and storage" in `CODE.md`; the empty-row case amended in
 step 2).
@@ -236,7 +237,21 @@ function scratch_count(tab::IMEXTableau)
     imp = implicit_used(tab)
     ex = explicit_used(tab)
     extra = any(k -> sol[k] && !imp[k] && !row_empty(tab, k), 1:nstages(tab)) ? 1 : 0
-    return 1 + count(imp) + count(ex) + extra
+    return (needs_U(tab) ? 1 : 0) + count(imp) + count(ex) + extra
+end
+
+"""
+    needs_U(tab::IMEXTableau)
+
+Whether some stage forms its stage value in the scratch `U`: a solving
+stage, or an explicit-used stage with a nonempty row. Every IMEX tableau
+here has one; explicit Euler, whose one stage reads `uⁿ` itself, has none
+(`U` added only where used, amended with the explicit tableaus).
+"""
+function needs_U(tab::IMEXTableau)
+    sol = solves(tab)
+    ex = explicit_used(tab)
+    return any(k -> sol[k] || (ex[k] && !row_empty(tab, k)), 1:nstages(tab))
 end
 
 """

@@ -61,18 +61,21 @@ end
 
 # The test environment is `test/Project.toml` (decided by Erik in step 6,
 # "File layout" in `CODE.md`). A dependency missing from it fails a file
-# far from here; the oracle without its bound could resolve to a release
+# far from here; an oracle without its bound could resolve to a release
 # whose tableaus or #4620 behaviour the recorded numbers do not describe.
 # `Pkg.test()` adds this package to the environment itself, on 1.10 and
 # on 1.13, so the file does not list it. CommonSolve is listed because the
 # tests load it by name, which the package's own dependency does not
 # allow; its bound is the root `[compat]`'s, through this package.
-@testset "The test-only dependencies are test/Project.toml's, the oracle bounded" begin
-    test_deps = ["CommonSolve", "LinearAlgebra", "OrdinaryDiffEqSDIRK", "TOML", "Test"]
+@testset "The test-only dependencies are test/Project.toml's, the oracles bounded" begin
+    test_deps = ["CommonSolve", "LinearAlgebra", "OrdinaryDiffEqLowOrderRK",
+                 "OrdinaryDiffEqSDIRK", "OrdinaryDiffEqSSPRK", "TOML", "Test"]
+    oracle_compat = Dict("OrdinaryDiffEqLowOrderRK" => "2.2.5",
+                         "OrdinaryDiffEqSDIRK" => "2.9.6", "OrdinaryDiffEqSSPRK" => "2.3.2")
     root = pkgdir(IMEXRungeKutta)
     test_project = TOML.parsefile(joinpath(root, "test", "Project.toml"))
     @test sort(collect(keys(test_project["deps"]))) == test_deps
-    @test test_project["compat"] == Dict("OrdinaryDiffEqSDIRK" => "2.9.6")
+    @test test_project["compat"] == oracle_compat
     @test !haskey(test_project, "sources")
     # Under `Pkg.test()` the active project is a copy of that file with
     # this package added, and its `[compat]` kept. The load path's
@@ -81,7 +84,7 @@ end
         active = TOML.parsefile(Base.active_project())
         @test sort(collect(keys(active["deps"]))) ==
               sort([test_deps; "IMEXRungeKutta"])
-        @test active["compat"]["OrdinaryDiffEqSDIRK"] == "2.9.6"
+        @test all(name -> active["compat"][name] == oracle_compat[name], keys(oracle_compat))
     end
 end
 

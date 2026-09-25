@@ -65,12 +65,12 @@ const CORNER_TABLEAUS = [
 ]
 
 # A per-tableau test that silently skipped a tableau would leave its plan
-# untested; the list must be the seven exported names.
-@testset "The per-tableau tests cover all seven named tableaus" begin
+# untested; the list must be the ten exported names.
+@testset "The per-tableau tests cover all ten named tableaus" begin
     exported = [getfield(IMEXRungeKutta, n) for n in names(IMEXRungeKutta)
-                if occursin(r"^(IMEXSSP|ARS)", String(n))]
+                if occursin(r"^(IMEXSSP|ARS|Euler$|RK4$|SSPRK)", String(n))]
     @test all(f -> f() isa IMEXTableau, exported)
-    @test length(NAMED_TABLEAUS) == 7
+    @test length(NAMED_TABLEAUS) == 10
     @test Set(NAMED_TABLEAUS) == Set(exported)
 end
 
@@ -79,7 +79,7 @@ end
 # second stage solve per stage, breaks the stage contract ("One step",
 # "Cost" in `CODE.md`).
 @testset "Each step makes the hand-counted calls, and the plan counts the same" begin
-    for spec in [CALL_COUNTS; CORNER_TABLEAUS]
+    for spec in [ALL_CALL_COUNTS; CORNER_TABLEAUS]
         tab = haskey(spec, :make) ? spec.make() : spec.tab
         integ = mock_integrator(tab, [1.0, 2.0])
         log = integ.p
@@ -108,7 +108,7 @@ end
 # stages sharing one they both need, would give wrong results ("The stage
 # plan and storage" in `CODE.md`).
 @testset "The scratch is scratch_count distinct arrays, and all the plan reads" begin
-    for spec in [CALL_COUNTS; CORNER_TABLEAUS]
+    for spec in [ALL_CALL_COUNTS; CORNER_TABLEAUS]
         tab = haskey(spec, :make) ? spec.make() : spec.tab
         integ = mock_integrator(tab, [1.0, 2.0])
         scratch = integ.plan.scratch
@@ -133,7 +133,7 @@ end
 # break "One step". The log is compared with the sequence rederived from
 # the exact tableau, call by call, time by time.
 @testset "The calls come in the order of One step, each at its own abscissa" begin
-    for spec in [CALL_COUNTS; CORNER_TABLEAUS]
+    for spec in [ALL_CALL_COUNTS; CORNER_TABLEAUS]
         tab = haskey(spec, :make) ? spec.make() : spec.tab
         integ = mock_integrator(tab, [1.0, 2.0]; tspan = (0.25, 1.25), dt = 0.1)
         log = integ.p
@@ -166,7 +166,7 @@ end
 # as it wrote `U`; a wrong `γΔt` would solve another stage equation ("The
 # callback contracts" in `CODE.md`).
 @testset "solve_imp! gets U = u★, distinct, u★ kept, and γΔt = a_kk Δt in T" begin
-    for spec in [CALL_COUNTS; CORNER_TABLEAUS]
+    for spec in [ALL_CALL_COUNTS; CORNER_TABLEAUS]
         tab = haskey(spec, :make) ? spec.make() : spec.tab
         integ = mock_integrator(tab, [1.0, -2.0, 3.0])
         log = integ.p
@@ -193,7 +193,7 @@ end
 # would limit nothing that is read ("The stage limiter acts only where
 # f_exp! reads" in `CODE.md`).
 @testset "The stage limiter runs just before each f_exp!, on its array, never on u" begin
-    for spec in [CALL_COUNTS; CORNER_TABLEAUS]
+    for spec in [ALL_CALL_COUNTS; CORNER_TABLEAUS]
         tab = haskey(spec, :make) ? spec.make() : spec.tab
         integ = mock_integrator(tab, [1.0, 2.0])
         log = integ.p
@@ -223,16 +223,47 @@ end
 # A copy of `uⁿ` at a trivial stage costs a state pass for nothing, and a
 # limiter call there would limit a state that has already been through the
 # step limiter ("A trivial first stage is uⁿ" in `CODE.md`).
-@testset "At ARS's trivial first stage, f_exp! receives integ.u itself" begin
-    for spec in CALL_COUNTS
+@testset "At a trivial first stage, f_exp! receives integ.u itself" begin
+    for spec in ALL_CALL_COUNTS
         tab = spec.make()
         integ = mock_integrator(tab, [1.0, 2.0])
         step!(integ)
         log = integ.p
         first_f = first(calls(log, :f_exp))
-        trivial = tab.name in ("ARS(2,2,2)", "ARS(4,4,3)")
+        trivial = tab.name in ("ARS(2,2,2)", "ARS(4,4,3)", "Euler", "RK4", "SSPRK(3,3)")
         @test (log.arr[first_f] === integ.u) == trivial
         @test count(i -> log.arr[i] === integ.u, calls(log, :f_exp)) == (trivial ? 1 : 0)
+    end
+end
+
+# At a trivial first stage `f_exp!` reads `uⁿ` as the previous step's step
+# limiter left it, and no stage limiter runs there; so a purely explicit
+# tableau limits every right-hand-side input only with both limiters
+# ("Explicit tableaus" in `CODE.md`). The step limiter writes a marker into
+# `uⁿ⁺¹`, the stage limiter another into each stage value, and `f` is zero,
+# so the first evaluation of step 2 sees the step limiter's marker exactly
+# where the first stage is trivial, and the stage limiter's elsewhere.
+function marker_f!(du, u, seen, t)
+    push!(seen, u[1])
+    du .= 0
+    return nothing
+end
+marker_step_limiter!(u, integ, p, t) = (u[1] = 1000; nothing)
+marker_stage_limiter!(u, integ, p, t) = (u[1] = -1; nothing)
+@testset "A trivial first stage reads uⁿ as the step limiter left it, unlimited by the stage limiter" begin
+    for spec in ALL_CALL_COUNTS
+        tab = spec.make()
+        seen = Float64[]
+        prob = IMEXProblem(marker_f!, (U, u★, γΔt, p, t) -> nothing, [1.0, 2.0], (0.0, 1.0),
+                           seen)
+        integ = init(prob, tab; dt = 0.1, stage_limiter = marker_stage_limiter!,
+                     step_limiter = marker_step_limiter!)
+        step!(integ)
+        empty!(seen)
+        step!(integ)
+        trivial = tab.name in ("ARS(2,2,2)", "ARS(4,4,3)", "Euler", "RK4", "SSPRK(3,3)")
+        @test first(seen) == (trivial ? 1000 : -1)
+        @test count(==(1000), seen) == (trivial ? 1 : 0)
     end
 end
 
@@ -241,7 +272,7 @@ end
 # TreeHydro's limiters are written against ("The callback contracts" in
 # `CODE.md`).
 @testset "The step limiter runs once per step, on integ.u, at tⁿ⁺¹, before t advances" begin
-    for spec in CALL_COUNTS
+    for spec in ALL_CALL_COUNTS
         integ = mock_integrator(spec.make(), [1.0, 2.0]; tspan = (0.0, 0.3), dt = 0.1)
         log = integ.p
         for n in 0:2
@@ -263,7 +294,7 @@ end
 # and `0·NaN = NaN`; scratch that carried a value from one step to the
 # next would break "the caller may change integ.u between steps".
 @testset "Scratch filled with NaN before every step changes no bit of the result" begin
-    for spec in [CALL_COUNTS; CORNER_TABLEAUS]
+    for spec in [ALL_CALL_COUNTS; CORNER_TABLEAUS]
         tab = haskey(spec, :make) ? spec.make() : spec.tab
         a = mock_integrator(tab, [1.0, -0.5, 2.0])
         b = mock_integrator(tab, [1.0, -0.5, 2.0])
@@ -298,7 +329,7 @@ end
 # from `uⁿ` after the stage solver fails ("Failures and exceptions" in
 # `CODE.md`).
 @testset "An exception from a callback leaves integ.u and integ.t unchanged" begin
-    for spec in CALL_COUNTS
+    for spec in ALL_CALL_COUNTS
         tab = spec.make()
         integ = mock_integrator(tab, [1.0, 2.0])
         log = integ.p
@@ -360,7 +391,7 @@ function reference_erk(tab, u0, t0, Δt, nsteps)
     end
 end
 @testset "With g ≡ 0 the result is the explicit RK method, to round-off" begin
-    for spec in CALL_COUNTS
+    for spec in ALL_CALL_COUNTS
         tab = spec.make()
         u0 = [1.0, -0.5, 2.0]
         prob = IMEXProblem(f_nonlinear!, solve_nothing!, u0, (0.5, 1.5))
@@ -405,14 +436,15 @@ end
 f_time!(du, u, p, t) = (du .= cos(t); nothing)
 solve_decay!(U, u★, γΔt, p, t) = (U .= u★ ./ (1 + γΔt); nothing)
 @testset "The stage limiter's change reaches f_exp! and nothing else" begin
-    for spec in CALL_COUNTS
+    for spec in ALL_CALL_COUNTS
         tab = spec.make()
         u0 = [1.0, 2.0]
         for (f!, same) in ((f_time!, true), (f_nonlinear!, false))
             prob = IMEXProblem(f!, solve_decay!, u0, (0.0, 1.0))
             a = solve(prob, tab; dt = 0.1)
             b = solve(prob, tab; dt = 0.1, stage_limiter = limiter_overwrite!)
-            @test (a.u == b.u) == same
+            # Explicit Euler calls no stage limiter, so nothing changes.
+            @test (a.u == b.u) == (same || spec.stage_limiter == 0)
         end
     end
 end
@@ -428,7 +460,7 @@ end
     if CHECK_BOUNDS_FORCED
         @info "Skipping the allocation tests under --check-bounds=yes"
     else
-        for spec in [CALL_COUNTS; CORNER_TABLEAUS]
+        for spec in [ALL_CALL_COUNTS; CORNER_TABLEAUS]
             tab = haskey(spec, :make) ? spec.make() : spec.tab
             # The mocks, both limiters, and a plain run.
             @test step_allocations(mock_integrator(tab, rand(100))) == 0

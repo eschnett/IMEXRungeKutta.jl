@@ -237,6 +237,40 @@ function ssp_coefficient(tab::IMEXTableau; tol = 1e-10)
 end
 
 """
+    explicit_order_residuals(tab, p)
+
+The residuals, as `label => lhs − rhs` pairs in the tableau's type, of the
+classical order conditions of exactly order `p` of the explicit part
+`(Ã, b̃)` alone, for a purely explicit tableau, whose implicit part is
+zero and so meets none of `order_residuals`' conditions on `b`. For
+`p ≤ 4` they are all the conditions (1, 1, 2 and 4 of them); for `p = 5`
+only the bushy-tree one, `b̃ᵀc̃⁴ = 1/5`, which is enough to show that
+classical RK4 stops at 4.
+"""
+function explicit_order_residuals(tab::IMEXTableau{R}, p::Integer) where {R}
+    return at256() do
+        b, X, c = tab.b̃, tab.Ã, tab.c̃
+        conditions = if p == 1
+            ("b̃ᵀ𝟙" => (sum(b), 1),)
+        elseif p == 2
+            ("b̃ᵀc̃" => (dotw(b, c), 1 // 2),)
+        elseif p == 3
+            ("b̃ᵀc̃²" => (dotw(b, c .^ 2), 1 // 3), "b̃ᵀÃc̃" => (dotw(b, X * c), 1 // 6))
+        elseif p == 4
+            ("b̃ᵀc̃³" => (dotw(b, c .^ 3), 1 // 4),
+             "b̃ᵀ(c̃∘Ãc̃)" => (dotw(b, c .* (X * c)), 1 // 8),
+             "b̃ᵀÃc̃²" => (dotw(b, X * c .^ 2), 1 // 12),
+             "b̃ᵀÃ²c̃" => (dotw(b, X * (X * c)), 1 // 24))
+        elseif p == 5
+            ("b̃ᵀc̃⁴" => (dotw(b, c .^ 4), 1 // 5),)
+        else
+            throw(ArgumentError("explicit_order_residuals: order $p is not implemented"))
+        end
+        return Pair{String,R}[label => lhs - R(rhs) for (label, (lhs, rhs)) in conditions]
+    end
+end
+
+"""
     stiffly_accurate(tab)
 
 `(implicit, explicit)`: whether `b` equals the last row of `A`, and
