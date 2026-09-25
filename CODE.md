@@ -80,6 +80,13 @@ existed:
     upstreams implement it under that name (OrdinaryDiffEqSDIRK's
     `IMEXSSP2322`, ClimaTimeSteppers' `SSP322`).
   - `IMEXSSP2332` is SSP2(3,3,2) (decided). It is in neither upstream.
+  - **Three purely explicit tableaus** (added 2026-09-25, Erik's
+    request): explicit Euler, for debugging, classical RK4 and Shu &
+    Osher's SSPRK(3,3), as `Euler()`, `RK4()` and `SSPRK33()`. They are
+    the additive method with a zero implicit part, so that a non-stiff
+    problem, or a stiff one being debugged, runs through the same
+    integrator, limiters and stage arithmetic, with no stage solver
+    ([Explicit tableaus](#explicit-tableaus-decided-2026-09-25)).
 - **A stage limiter hook** and a step limiter hook. These are
   positivity- or atmosphere-type resets of the state, with the signature
   of the SSPRK methods of OrdinaryDiffEqSSPRK. What a stage limiter's
@@ -105,7 +112,9 @@ existed:
   packages (OrdinaryDiffEqSDIRK) are test-only, in `test/Project.toml`
   (amended in step 6; [File layout](#file-layout-decided)). With it, the
   test environment has 142 packages on Julia 1.13 and 138 on 1.10,
-  standard libraries included (measured in step 3).
+  standard libraries included (measured in step 3). With the explicit
+  tableaus' oracles, OrdinaryDiffEqLowOrderRK and OrdinaryDiffEqSSPRK, it
+  has 144 and 140: they add only themselves (measured 2026-09-25).
 
 ## The method
 
@@ -374,6 +383,59 @@ reading only, with OrdinaryDiffEqSDIRK 2.9.6
     4.2e−14 (0.04ε) with the paper's. A reviewer's reproducer, on a
     problem not recorded here, measured −2.3e−5 against 1.6e−8 at
     `Δt = 0.1`, `ε = 10⁻¹⁰`.
+
+### Explicit tableaus (decided 2026-09-25)
+
+A purely explicit Runge–Kutta method is the additive method with `A = 0`
+and `b = 0`. It is admissible, since no stage solves and no implicit
+tendency is read. Every stage is explicit-used and none solves, so
+`solve_imp!` is never called, and the problem may pass `nothing` for it;
+`init` refuses `nothing` for a tableau that solves
+([The callback contracts](#the-callback-contracts-decided)). Stage 1 has
+an empty row, so it is a trivial stage: `f_exp!` reads `uⁿ` itself, with
+no copy and no stage limiter call ([One step](#one-step-decided)).
+
+- **`Euler()`**, `"Euler"`: `Ã = [0]`, `b̃ = [1]`, for debugging.
+- **`RK4()`**, `"RK4"`: classical RK4 (Kutta 1901), `c̃ = (0, ½, ½, 1)`,
+  `b̃ = (1/6, 1/3, 1/3, 1/6)`.
+- **`SSPRK33()`**, `"SSPRK(3,3)"`: Shu & Osher (1988), in Butcher form,
+  `Ã = [0 0 0; 1 0 0; ¼ ¼ 0]`, `b̃ = (1/6, 1/6, 2/3)`. It is exactly the
+  explicit part of SSP3(3,3,2), coefficient for coefficient (a test).
+
+All three are rational and held exactly. Measured, as for the IMEX
+tableaus (`test/tableau_tests.jl`, with the classical order conditions of
+`(Ã, b̃)` alone, since `b = 0` meets none on `b`):
+
+| | Euler | RK4 | SSPRK(3,3) |
+|---|---|---|---|
+| order | 1 | 4 | 3 |
+| next order misses by | 0.5 | 1/120 (`b̃ᵀc̃⁴ = 1/5`) | 0.083 |
+| SSP coefficient | 1 | 0 | 1 |
+| `f_exp!` calls per step | 1 | 4 | 3 |
+| stage limiter calls per step | 0 | 3 | 2 |
+| scratch arrays | 1 | 5 | 4 |
+
+A perturbation of any one explicit coefficient by 1e−3 breaks an order
+condition up to the stated order (a test). Explicit Euler forms no stage
+value, so it has no `U` either
+([The stage plan and storage](#the-stage-plan-and-storage-decided)).
+
+**Only the step limiter limits the first stage** (decided). Because stage
+1 is trivial, the stage limiter limits every right-hand-side input but
+that one, which is `uⁿ` as the previous step's step limiter left it. The
+first step's is the caller's `u0`, which neither limiter touches. So an
+explicit tableau limits every right-hand-side input only if the caller
+passes the same function as `stage_limiter` and as `step_limiter`, and
+limits `u0` before `init`. For explicit Euler, with no stage limiter
+call at all, the step limiter is the only one. The same holds for the ARS
+schemes, whose first stage is trivial too. A test checks that the first
+evaluation of a step sees `uⁿ` as the step limiter left it.
+
+**The names are OrdinaryDiffEq's** ([Tableaus are
+values](#tableaus-are-values-decided)): `Euler` and `RK4` are
+OrdinaryDiffEqLowOrderRK's and `SSPRK33` OrdinaryDiffEqSSPRK's, which the
+oracle compares them with ([The oracle](#the-oracle)). They clash with
+those exports as the IMEX names clash with OrdinaryDiffEqSDIRK's.
 
 ### One step (decided)
 
@@ -694,6 +756,11 @@ What step 2 settled (proposed in step 2, decided 2026-09-24):
   At a trivial first stage, `u` is `integ.u` itself.
 - **`solve_imp!(U, u★, γΔt, p, t)`** writes `U` so that
   `U = u★ + γΔt g(U, t)`.
+  - **It may be `nothing`** for a tableau that makes no stage solve, the
+    [explicit tableaus](#explicit-tableaus-decided-2026-09-25) (amended
+    2026-09-25). `init` refuses `nothing` for any other, saying how many
+    stage solves the tableau makes. A stage solver given with an
+    explicit tableau is never called, so a problem can switch tableaus.
   - `U` and `u★` are distinct arrays, and `u★` must not be changed.
     Where the stage's row is empty, `u★ = uⁿ`, and the integrator passes
     `integ.u` itself as `u★`, with no copy (amended in step 2; see
@@ -796,14 +863,16 @@ step limiter, `integ.u` is undefined.
   `ArgumentError` that says why.
 - **Named constructors** (decided): `IMEXSSP222()`, `IMEXSSP2322()`,
   `IMEXSSP2332()`, `IMEXSSP3332()`, `IMEXSSP3433()`, `ARS222()` and
-  `ARS443()` (`IMEXSSP2332()` added in step 1).
+  `ARS443()` (`IMEXSSP2332()` added in step 1), and the explicit
+  `Euler()`, `RK4()` and `SSPRK33()` (added 2026-09-25).
   - These are OrdinaryDiffEq's names, so an oracle test reads as a
     comparison of like with like. `IMEXSSP2332` has no upstream
     counterpart; it follows the same rule.
   - `IMEXSSPksσp` is Pareschi–Russo's SSPk(s,σ,p). The short
     `IMEXSSP222` is SSP2(2,2,2).
-  - They clash with OrdinaryDiffEqSDIRK's exports, so the tests
-    `import` it and qualify its names.
+  - They clash with OrdinaryDiffEqSDIRK's exports, and the explicit three
+    with OrdinaryDiffEqLowOrderRK's and OrdinaryDiffEqSSPRK's, so the
+    tests `import` those and qualify their names.
   - They are functions returning an `IMEXTableau`, not constants,
     because a `BigFloat` does not survive precompilation reliably.
 - **A caller's own tableau** goes through the same constructor.
@@ -826,7 +895,7 @@ What step 1 settled (proposed in step 1, decided 2026-09-24):
   that is not finite.
 - **It prints as** `IMEXTableau{BigFloat}("SSP3(4,3,3)", 4 stages)`
   (amended in step 6, which recorded it and added the test).
-- **`IMEXTableau` is exported** beside the seven names, for a caller's own
+- **`IMEXTableau` is exported** beside the named tableaus, for a caller's own
   tableau.
 - **Internal functions for step 2's plan**, in `src/tableau.jl`:
   - `nstages`, and the per-stage patterns `solves`, `explicit_used` and
@@ -882,7 +951,9 @@ first touch puts each page on the NUMA domain that will use it. Nothing
 reads that initial value. `u★` is formed in the array that will then
 hold `d_k`, since `d_k = U − u★` can overwrite `u★` element by element.
 So the scratch is:
-- `U`;
+- `U`, if some stage forms a stage value in it: a solving stage, or an
+  explicit-used stage with a nonempty row (amended 2026-09-25: explicit
+  Euler has none, and every other named tableau has one);
 - one array per implicit-used stage;
 - one array per explicit-used stage;
 - one more if some solving stage that is not implicit-used has a
@@ -1129,7 +1200,7 @@ it, and the in-place increment 0.38 ms and 0.24 ms; the broadcast takes
 its broadcast, or faster.
 
 **Bitwise identity, tested and checked by mutation.** `owner_tests.jl`
-runs the seven tableaus and the three corner tableaus of the mechanics
+runs the named tableaus (the explicit three since 2026-09-25) and the three corner tableaus of the mechanics
 tests on `Float64`, `Float32` and `ComplexF64` states of 203 entries
 (`u′ = cos t − u²(1 + u)` with a stiff relaxation, and limiters that
 change the state), four steps each. The partitions are `:even`, a
@@ -1255,7 +1326,7 @@ What it says:
 
 - `src/IMEXRungeKutta.jl`: the module and its exports.
 - `src/tableau.jl`: `IMEXTableau`, its checks, and the conversion to `T`.
-- `src/tableaus.jl`: the seven tableaus, in closed form.
+- `src/tableaus.jl`: the ten tableaus, in closed form.
 - `src/plan.jl`: the stage plan.
 - `src/lincomb.jl`: fused linear combinations, broadcast and threaded.
 - `src/integrator.jl`: `IMEXProblem`, `init`, `step!` and `solve!`.
@@ -1293,10 +1364,13 @@ What it says:
   test/Project.toml). Step 0 had proposed `[extras]` and `[targets]` in
   the root `Project.toml`, which now holds only `[deps]` CommonSolve and
   its `[compat]` for CommonSolve and `julia`.
-  - Its `[deps]` are CommonSolve, LinearAlgebra, OrdinaryDiffEqSDIRK,
-    TOML and Test. TOML is there for the project-file checks, and
-    OrdinaryDiffEqSDIRK for the oracle, with the `[compat]` bound
-    `"2.9.6"` ([The oracle](#the-oracle)). CommonSolve is there because
+  - Its `[deps]` are CommonSolve, LinearAlgebra,
+    OrdinaryDiffEqLowOrderRK, OrdinaryDiffEqSDIRK, OrdinaryDiffEqSSPRK,
+    TOML and Test. TOML is there for the project-file checks, and the
+    three OrdinaryDiffEq packages for the oracles, with the `[compat]`
+    bounds `"2.2.5"`, `"2.9.6"` and `"2.3.2"`, the versions the suite
+    ran against ([The oracle](#the-oracle); the two explicit ones added
+    2026-09-25). CommonSolve is there because
     the tests load it by name, which a dependency of the package alone
     does not allow (measured in step 6: without it, `scaffold_tests.jl`
     fails with "Package CommonSolve not found"). Its bound is the root
@@ -1459,6 +1533,11 @@ failure mode it guards.
       global `BigFloat` precision;
     - the 14 printed digits of SSP3(4,3,3) are the closed form rounded;
     - upstream's ARS(4,4,3) variant is third order too.
+  - also (added 2026-09-25) for the explicit tableaus: each meets the
+    classical conditions of its order exactly and misses the next; a slip
+    in any one coefficient fails one; the SSP coefficient, the patterns
+    and the scratch count are as recorded; SSPRK(3,3) is SSP3(3,3,2)'s
+    explicit part.
 - **Mechanics:**
   - `step!` is allocation-free after warm-up;
   - `solve_imp!` is called once per implicit stage, with the documented
@@ -1468,6 +1547,11 @@ failure mode it guards.
   - the stage limiter is called exactly before each `f_exp!` call, on
     the same array, and never on `integ.u` (a mock);
   - at a trivial first stage, `f_exp!` receives `integ.u` itself;
+  - also (added 2026-09-25): the mechanics run over the explicit
+    tableaus too; a trivial first stage reads `uⁿ` as the step limiter
+    left it, unlimited by the stage limiter; an explicit tableau takes
+    `solve_imp! = nothing` and never calls one given; `init` refuses
+    `nothing` for a tableau that solves;
   - scratch filled with NaN before the first step leaves no NaN in the
     result, so no structural zero is read;
   - an exception thrown by `solve_imp!` leaves `integ.u` and `integ.t`
@@ -1539,7 +1623,9 @@ failure mode it guards.
     variation](#ssp-and-total-variation)).
 - **Oracle:** each tableau OrdinaryDiffEqSDIRK has matches it to 1e−12
   over ten steps, within the restrictions above. That is all but
-  SSP2(3,3,2) (amended in step 1).
+  SSP2(3,3,2) (amended in step 1). The explicit three match
+  OrdinaryDiffEqLowOrderRK's `Euler` and `RK4` and OrdinaryDiffEqSSPRK's
+  `SSPRK33` (added 2026-09-25).
   - Also (amended in step 3): with a `t`-dependent `f`, it matches
     where `c̃_s = 1` and is `@test_broken` where not (#4620); the
     14-digit SSP3(4,3,3) is compared on its own; and our ARS(4,4,3)
@@ -1597,6 +1683,16 @@ within 0.005 of the number here.
 | SSP3(4,3,3) | 3 | 3.007 | 3.006 |
 | ARS(2,2,2) | 2 | 2.004 | 2.009 |
 | ARS(4,4,3) | 3 | 3.005 | 3.001 |
+
+The explicit tableaus run the same two problems with the implicit part
+made explicit, `u′ = (i − 1)u` and `u′ = cos t − u`, and no stage solver
+(measured 2026-09-25):
+
+| | stated | `u′ = (i − 1)u` (complex) | `u′ = cos t − u` |
+|---|---|---|---|
+| Euler | 1 | 1.009 | 1.002 |
+| RK4 | 4 | 4.011 | 4.004 |
+| SSPRK(3,3) | 3 | 3.011 | 3.006 |
 
 ### The stiff limit
 
@@ -1695,6 +1791,11 @@ largest over the steps and over both components; the order is fitted over
   1, although its SSP coefficient is 0. ARS(4,4,3)'s has the `z⁴`
   coefficient `−7/288`, so no positive threshold; its 0.0021 is where the
   `O(C⁴)` rise falls below the tolerance, and `C = 0.01` fails (a test).
+- **The explicit tableaus** have no relaxation, and are measured without
+  it only (measured 2026-09-25): `C = 1.0000` for Euler, RK4 and
+  SSPRK(3,3). For Euler and SSPRK(3,3) that is the SSP coefficient; RK4's
+  is 0, but its polynomial `1 + z + z²/2 + z³/6 + z⁴/24` has the linear
+  threshold 1.
 - **With relaxation as fast as the advection** (`ε = 10⁻²`, `Δt/ε = C`),
   every `C` is below the explicit threshold.
 - **In the stiff limit** the non-stiffly-accurate three have `C = 0`: each
@@ -1734,6 +1835,16 @@ real components, `Lu` implicit. Upstream is OrdinaryDiffEqSDIRK 2.9.6.
   closed form by 4.9e−16, and from upstream by 1.9e−16.
 - Our own ARS(4,4,3), the paper's, differs from upstream's by 2.5e−5 over
   the ten steps ("Cross-checks").
+- The explicit tableaus against OrdinaryDiffEqLowOrderRK 2.2.5's `Euler`
+  and `RK4` and OrdinaryDiffEqSSPRK 2.3.2's `SSPRK33`, on the same problem
+  made wholly explicit, `u′ = (L + M)u + a cos(3t) v`, with
+  `adaptive = false` (measured 2026-09-25):
+
+  | | `a = 0` | `a = 1` |
+  |---|---|---|
+  | Euler | 3.5e−17 | 9.4e−17 |
+  | RK4 | 2.8e−17 | 3.8e−17 |
+  | SSPRK(3,3) | 2.8e−17 | 1.2e−16 |
 - `test/Project.toml` adds OrdinaryDiffEqSDIRK with the compat bound
   `"2.9.6"`, that is `[2.9.6, 3)` (proposed in step 3, decided
   2026-09-24). A release that fixes #4620 turns the two `@test_broken`
@@ -1873,6 +1984,12 @@ Deferred:
 - U. M. Ascher, S. J. Ruuth and R. J. Spiteri, *Implicit–explicit
   Runge–Kutta methods for time-dependent partial differential
   equations*, Appl. Numer. Math. 25 (1997) 151–167.
+- W. Kutta, *Beitrag zur näherungsweisen Integration totaler
+  Differentialgleichungen*, Z. Math. Phys. 46 (1901) 435–453 — classical
+  RK4.
+- C.-W. Shu and S. Osher, *Efficient implementation of essentially
+  non-oscillatory shock-capturing schemes*, J. Comput. Phys. 77 (1988)
+  439–471 — SSPRK(3,3).
 - C. Palenzuela, L. Lehner, O. Reula and L. Rezzolla, *Beyond ideal MHD:
   towards a more realistic modelling of relativistic astrophysical
   plasmas*, MNRAS 394 (2009) 1727–1740 — IMEX-SSP for resistive MHD.

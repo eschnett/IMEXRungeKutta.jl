@@ -1,6 +1,7 @@
 using CommonSolve: CommonSolve
 using IMEXRungeKutta: IMEXRungeKutta, IMEXProblem, IMEXTableau
 using IMEXRungeKutta: IMEXSSP222, IMEXSSP3433, ARS222, ARS443
+using IMEXRungeKutta: Euler, RK4, SSPRK33
 
 # "The interface" and "Time and the step count" in `CODE.md`.
 
@@ -221,6 +222,25 @@ end
                    msg(() -> init(decay_problem([1.0], (0.0, Inf)), ARS222(); dt = 0.1)))
     @test occursin("(t0, t1)", msg(() -> IMEXProblem(f_decay!, solve_decay_imp!, [1.0],
                                                      (0.0, 1.0, 2.0))))
+    # No `solve_imp!` for a tableau that solves ("Explicit tableaus").
+    explicit = IMEXProblem(f_decay!, nothing, [1.0], (0.0, 1.0))
+    @test occursin("makes 4 stage solves", msg(() -> init(explicit, IMEXSSP3433(); dt = 0.1)))
+    @test occursin("makes 2 stage solves", msg(() -> init(explicit, ARS222(); dt = 0.1)))
+end
+
+# A purely explicit problem should not need a dummy stage solver; with
+# `solve_imp! = nothing` it is the explicit method, and a stage solver that
+# is given is never called ("Explicit tableaus" in `CODE.md`).
+never_called!(U, u★, γΔt, p, t) = error("solve_imp! called by an explicit tableau")
+@testset "An explicit tableau takes solve_imp! = nothing, and never calls one given" begin
+    for make in (Euler, RK4, SSPRK33)
+        a = solve(IMEXProblem(f_decay!, nothing, [1.0], (0.0, 1.0)), make(); dt = 0.1)
+        b = solve(IMEXProblem(f_decay!, never_called!, [1.0], (0.0, 1.0)), make(); dt = 0.1)
+        @test a.u == b.u
+        @test a.t === 1.0
+        integ = init(IMEXProblem(f_decay!, nothing, Float32[1], (0.0, 1.0)), make(); dt = 0.1)
+        @test (@inferred step!(integ)) === nothing
+    end
 end
 
 # An export without a docstring, or one that does not point at the design

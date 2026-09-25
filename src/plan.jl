@@ -101,7 +101,9 @@ function build_plan(tab::IMEXTableau, u, u0, ::Type{T}, Δt::Tt, partition) wher
         push!(scratch, a)
         return a
     end
-    U = allocate()
+    # `U` only if some stage forms a stage value in it: a solving stage, or
+    # an explicit-used one with a nonempty row. Explicit Euler has none.
+    U = needs_U(tab) ? allocate() : nothing
     D = Any[imp[k] ? allocate() : nothing for k in 1:s]
     K = Any[ex[k] ? allocate() : nothing for k in 1:s]
 

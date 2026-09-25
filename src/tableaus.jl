@@ -1,4 +1,5 @@
-# The seven named tableaus, in closed form ("Tableaus" in `CODE.md`).
+# The ten named tableaus, in closed form ("Tableaus" in `CODE.md`): seven
+# IMEX and, at the end, three purely explicit.
 #
 # They are functions, not constants, because a BigFloat does not survive
 # precompilation reliably. The irrational ones are computed inside
@@ -236,4 +237,77 @@ function ARS443()
             0 3//2 -3//2 1//2 1//2])
     b = q.([0, 3 // 2, -3 // 2, 1 // 2, 1 // 2])
     return IMEXTableau{Rational{BigInt}}("ARS(4,4,3)", Ã, b̃, A, b)
+end
+
+# The purely explicit tableaus ("Explicit tableaus" in `CODE.md`): an
+# additive method whose implicit part is zero, `A = 0` and `b = 0`. Every
+# stage is explicit-used and none solves, so `solve_imp!` is never called
+# and may be `nothing`. Stage 1 has an empty row and is the trivial stage:
+# `f_exp!` reads `uⁿ` itself, which only the step limiter has limited.
+
+# A purely explicit tableau from its explicit part, held exactly.
+function explicit_tableau(name, Ã, b̃)
+    q(x) = Rational{BigInt}(x)
+    s = length(b̃)
+    return IMEXTableau{Rational{BigInt}}(name, q.(Ã), q.(b̃), zeros(Rational{BigInt}, s, s),
+                                         zeros(Rational{BigInt}, s))
+end
+
+"""
+    Euler()
+
+The explicit Euler method, `uⁿ⁺¹ = uⁿ + Δt f(uⁿ, tⁿ)`: one stage, first
+order, SSP coefficient 1. It is for debugging. The implicit part is zero,
+so `solve_imp!` is never called and may be `nothing`. Its one stage reads
+`uⁿ` itself, so only the step limiter limits what `f_exp!` sees (`CODE.md`,
+"Explicit tableaus"). OrdinaryDiffEq's name, as the other named tableaus
+are; it clashes with OrdinaryDiffEqLowOrderRK's `Euler`.
+"""
+function Euler()
+    return explicit_tableau("Euler", fill(0, 1, 1), [1])
+end
+
+"""
+    RK4()
+
+The classical fourth-order Runge–Kutta method of Kutta (1901): four
+stages, `c̃ = (0, 1/2, 1/2, 1)`, `b̃ = (1/6, 1/3, 1/3, 1/6)`, fourth order,
+SSP coefficient 0. The implicit part is zero, so `solve_imp!` is never
+called and may be `nothing`. Its first stage reads `uⁿ` itself, so a
+caller who limits every right-hand-side input passes the same function as
+the stage and the step limiter (`CODE.md`, "Explicit tableaus").
+OrdinaryDiffEq's name, as the other named tableaus are; it clashes with
+OrdinaryDiffEqLowOrderRK's `RK4`.
+"""
+function RK4()
+    # Kutta (1901); Hairer, Nørsett & Wanner, Solving ODEs I, Table II.1.2.
+    return explicit_tableau("RK4",
+                            [0 0 0 0
+                             1//2 0 0 0
+                             0 1//2 0 0
+                             0 0 1 0],
+                            [1 // 6, 1 // 3, 1 // 3, 1 // 6])
+end
+
+"""
+    SSPRK33()
+
+SSPRK(3,3), the three-stage third-order SSP method of Shu & Osher (1988),
+in Butcher form: `c̃ = (0, 1, 1/2)`, `b̃ = (1/6, 1/6, 2/3)`, SSP coefficient
+1. It is exactly the explicit part of [`IMEXSSP3332`](@ref). The implicit
+part is zero, so `solve_imp!` is never called and may be `nothing`. Its
+first stage reads `uⁿ` itself, so a caller who limits every
+right-hand-side input passes the same function as the stage and the step
+limiter (`CODE.md`, "Explicit tableaus"). OrdinaryDiffEq's name, as the
+other named tableaus are; it clashes with OrdinaryDiffEqSSPRK's `SSPRK33`.
+"""
+function SSPRK33()
+    # Shu & Osher (1988), eq. (2.18), in Butcher form: the Shu–Osher stages
+    # u⁽¹⁾ = uⁿ + Δt L(uⁿ), u⁽²⁾ = ¾uⁿ + ¼(u⁽¹⁾ + Δt L(u⁽¹⁾)) and
+    # uⁿ⁺¹ = ⅓uⁿ + ⅔(u⁽²⁾ + Δt L(u⁽²⁾)).
+    return explicit_tableau("SSPRK(3,3)",
+                            [0 0 0
+                             1 0 0
+                             1//4 1//4 0],
+                            [1 // 6, 1 // 6, 2 // 3])
 end

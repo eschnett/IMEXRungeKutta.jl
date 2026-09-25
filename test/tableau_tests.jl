@@ -1,6 +1,7 @@
 using IMEXRungeKutta: IMEXRungeKutta, IMEXTableau
 using IMEXRungeKutta: IMEXSSP222, IMEXSSP2322, IMEXSSP2332, IMEXSSP3332, IMEXSSP3433
 using IMEXRungeKutta: ARS222, ARS443
+using IMEXRungeKutta: Euler, RK4, SSPRK33
 
 # The properties of each named tableau, as measured in step 1 and recorded
 # in `CODE.md` ("Tableaus", "Measured properties"). `stiffly_accurate` is
@@ -405,4 +406,91 @@ end
     tab = IMEXSSP2322()
     @test [tab.A[k, k] for k in 1:3] == fill(1 // 2, 3)
     @test tab.A[2, 1] == -tab.A[1, 1]
+end
+
+# The three purely explicit tableaus ("Explicit tableaus" in `CODE.md`),
+# with the properties of their explicit part; the implicit part is zero.
+const EXPLICIT_TABLEAUS = [
+    (make = Euler, name = "Euler", order = 1, ssp = 1, s = 1, scratch = 1),
+    (make = RK4, name = "RK4", order = 4, ssp = 0, s = 4, scratch = 5),
+    (make = SSPRK33, name = "SSPRK(3,3)", order = 3, ssp = 1, s = 3, scratch = 4),
+]
+
+explicit_failing(tab, p) =
+    at256(() -> [label for (label, r) in explicit_order_residuals(tab, p) if !iszero(r)])
+
+# A transcription error in an explicit tableau, or a helper that did not
+# tell its orders apart, shows here. They are rational, so each condition
+# holds exactly.
+@testset "Each explicit tableau meets its classical order conditions exactly, and misses the next" begin
+    for spec in EXPLICIT_TABLEAUS
+        tab = spec.make()
+        @test tab isa IMEXTableau{Rational{BigInt}}
+        @test tab.name == spec.name
+        @test all(iszero, tab.A) && all(iszero, tab.b)
+        for p in 1:(spec.order)
+            @test explicit_failing(tab, p) == String[]
+        end
+        @test maximum(abs ∘ last, explicit_order_residuals(tab, spec.order + 1)) > 1e-3
+    end
+    # RK4 misses the bushy fifth-order condition by 5/24 − 1/5.
+    @test only(explicit_order_residuals(RK4(), 5)).second == 1 // 120
+end
+
+# A wrong pattern would make the plan call `f_exp!` where nothing reads it
+# or make a stage solve with no solver; the SSP coefficient recorded in
+# `CODE.md` would go stale if a tableau changed.
+@testset "Each explicit tableau has its SSP coefficient, patterns and scratch" begin
+    for spec in EXPLICIT_TABLEAUS
+        tab = spec.make()
+        @test abs(ssp_coefficient(tab) - spec.ssp) ≤ 1e-10
+        @test IMEXRungeKutta.nstages(tab) == spec.s
+        @test IMEXRungeKutta.solves(tab) == falses(spec.s)
+        @test IMEXRungeKutta.explicit_used(tab) == trues(spec.s)
+        @test IMEXRungeKutta.implicit_used(tab) == falses(spec.s)
+        @test IMEXRungeKutta.scratch_count(tab) == spec.scratch
+        @test IMEXRungeKutta.row_empty(tab, 1)
+        @test IMEXRungeKutta.needs_U(tab) == (spec.s > 1)
+        @test tab.c̃ == [sum(tab.Ã[k, :]) for k in 1:(spec.s)]
+        @test tab.c == zeros(spec.s)
+    end
+    @test RK4().c̃ == [0, 1 // 2, 1 // 2, 1]
+    @test SSPRK33().c̃ == [0, 1, 1 // 2]
+    # SSPRK(3,3) is SSP3(3,3,2)'s explicit part, coefficient for coefficient.
+    # (SSP3(3,3,2) is held in BigFloat, so the comparison is at 256 bits.)
+    at256() do
+        @test BigFloat.(SSPRK33().Ã) == IMEXSSP3332().Ã
+        @test BigFloat.(SSPRK33().b̃) == IMEXSSP3332().b̃
+    end
+    # Every IMEX tableau here forms a stage value in `U`.
+    @test all(spec -> IMEXRungeKutta.needs_U(spec.make()), TABLEAUS)
+    @test sprint(show, RK4()) == "IMEXTableau{Rational{BigInt}}(\"RK4\", 4 stages)"
+end
+
+# The order conditions are the independent check of each transcription,
+# so a slip in any one explicit coefficient must break one of them.
+function undetected_explicit_perturbations(spec)
+    tab = spec.make()
+    found = String[]
+    for (f, label) in ((:Ã, "ã"), (:b̃, "b̃"))
+        x = getfield(tab, f)
+        for i in eachindex(x)
+            if x isa Matrix
+                k, j = Tuple(CartesianIndices(x)[i])
+                j < k || continue
+            end
+            y = copy(x)
+            y[i] += 1 // 1000
+            Ã, b̃ = f === :Ã ? (y, tab.b̃) : (tab.Ã, y)
+            m = IMEXTableau("m", Ã, b̃, tab.A, tab.b)
+            all(p -> isempty(explicit_failing(m, p)), 1:(spec.order)) &&
+                push!(found, "$label$(Tuple(CartesianIndices(x)[i]))")
+        end
+    end
+    return found
+end
+@testset "A slip in any explicit tableau's coefficient fails a check" begin
+    for spec in EXPLICIT_TABLEAUS
+        @test undetected_explicit_perturbations(spec) == String[]
+    end
 end

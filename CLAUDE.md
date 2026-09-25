@@ -51,16 +51,20 @@ the Symmetry run he asked for. Open or pending:
 What exists:
 - `Project.toml` with CommonSolve as the one run-time dependency, and
   `test/Project.toml`, the test environment: CommonSolve, LinearAlgebra,
-  OrdinaryDiffEqSDIRK (compat `2.9.6`, the oracle), TOML and Test;
+  OrdinaryDiffEqLowOrderRK (compat `2.2.5`), OrdinaryDiffEqSDIRK (compat
+  `2.9.6`) and OrdinaryDiffEqSSPRK (compat `2.3.2`), the oracles, TOML and
+  Test;
 - `src/IMEXRungeKutta.jl`, the module, which re-exports CommonSolve's
   `init`, `solve`, `solve!` and `step!` and exports `IMEXProblem`,
-  `IMEXTableau` and the seven named tableaus;
+  `IMEXTableau` and the ten named tableaus;
 - `src/tableau.jl`: `IMEXTableau{R}`, its checks, and the internals the
   plan reads: `solves`, `explicit_used`, `implicit_used`, `row_empty`,
-  `scratch_count` and `coefficients(T, Tt, tab)`;
+  `needs_U`, `scratch_count` and `coefficients(T, Tt, tab)`;
 - `src/tableaus.jl`: `IMEXSSP222`, `IMEXSSP2322` (SSP2(3,2,2)),
   `IMEXSSP2332` (SSP2(3,3,2), in neither upstream, so no oracle),
-  `IMEXSSP3332`, `IMEXSSP3433`, `ARS222` and `ARS443`, in closed form;
+  `IMEXSSP3332`, `IMEXSSP3433`, `ARS222` and `ARS443`, in closed form,
+  and the purely explicit `Euler`, `RK4` and `SSPRK33` (2026-09-25), for
+  which `solve_imp!` may be `nothing` (`CODE.md`, "Explicit tableaus");
 - `src/lincomb.jl`: `lincomb!`, `lincomb_copy!`, `copy_state!`,
   `increment!`, `first_touch!` and `copy_initial`, each with a last
   `partition` argument: `nothing` is one fused broadcast, and an
@@ -166,7 +170,9 @@ it: without CommonSolve in it, `using CommonSolve` in `scaffold_tests.jl`
 fails with "Package CommonSolve not found".
 
 **The test environment is large** since step 3 added OrdinaryDiffEqSDIRK
-as the oracle: 142 packages on 1.13, 138 on 1.10. Measured on the M3
+as the oracle: 142 packages on 1.13, 138 on 1.10; with the explicit
+oracles OrdinaryDiffEqLowOrderRK and OrdinaryDiffEqSSPRK, 144 and 140
+(measured 2026-09-25). Measured on the M3
 (step 3), from a fresh `JULIA_DEPOT_PATH`, so including the downloads:
 - 1.13.0: 238 s in all. `Pkg.instantiate()` of the package itself, with
   the registry, 49 s; then `Pkg.test()` 189 s, of which resolving and
@@ -297,8 +303,14 @@ implementation plan. The why is in `CODE.md`.
   SciMLBase's and OrdinaryDiffEq's bindings too; a test asserts
   `IMEXRungeKutta.init === CommonSolve.init`.
 - **The tableau names clash with OrdinaryDiffEqSDIRK's** (`IMEXSSP3433`,
-  `ARS222`, …). The oracle test does `import OrdinaryDiffEqSDIRK as ODE`
-  and qualifies everything.
+  `ARS222`, …), and the explicit ones with OrdinaryDiffEqLowOrderRK's
+  (`Euler`, `RK4`) and OrdinaryDiffEqSSPRK's (`SSPRK33`). The oracle test
+  imports them `as ODE`, `as LowRK` and `as SSPRK`, and qualifies
+  everything.
+- **An explicit tableau's first stage is trivial**: `f_exp!` reads `uⁿ`
+  there with no stage limiter call. Every right-hand-side input is limited
+  only with the same function as both limiters, and `u0` limited before
+  `init` (`CODE.md`, "Explicit tableaus").
 - **The oracle.**
   - SciML's `SplitODEProblem(f1, f2, u0, tspan)` treats **`f1`
     implicitly** and `f2` explicitly: the opposite order from

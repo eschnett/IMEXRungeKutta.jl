@@ -1,6 +1,7 @@
 using IMEXRungeKutta: IMEXProblem
 using IMEXRungeKutta: IMEXSSP222, IMEXSSP2322, IMEXSSP2332, IMEXSSP3332, IMEXSSP3433
 using IMEXRungeKutta: ARS222, ARS443
+using IMEXRungeKutta: Euler, RK4, SSPRK33
 
 # Total variation under upwind advection with relaxation ("Testing", SSP,
 # in `CODE.md`):
@@ -107,6 +108,25 @@ const SSP_TABLE = [
         spec.ssp > 0 && @test abs(C - spec.ssp) < 1e-3
     end
     @test !ssp_run(ARS443(), 0.01, Inf).ok
+end
+
+# The purely explicit tableaus have no relaxation to run with; without it
+# their threshold is that of their stability polynomial, and equals the SSP
+# coefficient where it is positive ("Explicit tableaus" in `CODE.md`).
+# RK4's SSP coefficient is 0, but on this linear problem only its
+# stability polynomial matters, `1 + z + z²/2 + z³/6 + z⁴/24`, whose
+# threshold is 1.
+const EXPLICIT_SSP_TABLE = [
+    (make = Euler, ssp = 1, C∞ = 1.0),
+    (make = RK4, ssp = 0, C∞ = 1.0),
+    (make = SSPRK33, ssp = 1, C∞ = 1.0),
+]
+@testset "An explicit tableau's C is its linear threshold, the SSP coefficient where > 0" begin
+    for spec in EXPLICIT_SSP_TABLE
+        C = largest_C(spec.make(), Inf)
+        @test abs(C - spec.C∞) < 1e-3
+        spec.ssp > 0 && @test abs(C - spec.ssp) < 1e-3
+    end
 end
 
 # Relaxation as fast as the advection: a regression value per tableau.

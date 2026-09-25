@@ -12,7 +12,9 @@ hyperbolic systems with stiff relaxation local to a grid cell, where the
 best stage solver is problem-specific.
 
 The tableaus are the IMEX-SSP schemes of Pareschi & Russo (2005) and the
-ARS schemes of Ascher, Ruuth & Spiteri (1997). The interface is
+ARS schemes of Ascher, Ruuth & Spiteri (1997), and three purely explicit
+ones, explicit Euler, classical RK4 and Shu–Osher's SSPRK(3,3), for which
+`solve_imp!` may be `nothing`. The interface is
 CommonSolve's `init`, `solve!`, `step!` and `solve`, re-exported here, so
 that this package loads beside SciMLBase or OrdinaryDiffEq without a name
 clash.
@@ -31,6 +33,7 @@ export IMEXProblem
 export IMEXTableau
 export IMEXSSP222, IMEXSSP2322, IMEXSSP2332, IMEXSSP3332, IMEXSSP3433
 export ARS222, ARS443
+export Euler, RK4, SSPRK33
 
 # The source files of "File layout" in `CODE.md`.
 include("tableau.jl")

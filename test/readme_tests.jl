@@ -1,6 +1,6 @@
 using LinearAlgebra: LinearAlgebra
 
-# The worked example in `README.md` must run as written: a README whose
+# The worked examples in `README.md` must run as written: a README whose
 # example has gone stale is worse than none. Its `julia` code blocks are
 # extracted and evaluated, in order, in a fresh module, and the result is
 # checked against the relaxation's quasi-steady state.
@@ -37,4 +37,8 @@ end
     @test abs(predicted + 0.2844) < 1e-4
     displacement = (ssp.u .- p.ū) ./ (ssp.dt * cos(1.0))
     @test maximum(abs.(displacement .- predicted)) < 0.01
+    # The explicit example: RK4 with no stage solver, and its stated error.
+    explicit = Core.eval(m, :explicit)
+    @test explicit.tableau.name == "RK4" && explicit.t === 1.0
+    @test abs(explicit.u[1] - exp(-1.0) - 3.3e-7) < 0.05e-7
 end

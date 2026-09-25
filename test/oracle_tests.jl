@@ -1,6 +1,9 @@
 import OrdinaryDiffEqSDIRK as ODE
+import OrdinaryDiffEqLowOrderRK as LowRK
+import OrdinaryDiffEqSSPRK as SSPRK
 using IMEXRungeKutta: IMEXProblem, IMEXTableau
 using IMEXRungeKutta: IMEXSSP222, IMEXSSP2322, IMEXSSP3332, IMEXSSP3433, ARS222, ARS443
+using IMEXRungeKutta: Euler, RK4, SSPRK33
 using LinearAlgebra: I, mul!
 
 # OrdinaryDiffEqSDIRK as an oracle ("Why not an existing package" and
@@ -137,4 +140,41 @@ end
     @test abs(fitted_order(dts, diffs) - 4) < 0.15
     # Upstream's own ARS443 is the b̃ = b variant, not ours.
     @test oracle_difference(ODE.ARS443(), ARS443(), AUTONOMOUS) > 1e-6
+end
+
+# The purely explicit tableaus against OrdinaryDiffEqLowOrderRK's `Euler`
+# and `RK4` and OrdinaryDiffEqSSPRK's `SSPRK33`, whose names clash with
+# ours as the IMEX ones do ("Explicit tableaus" in `CODE.md`). The same
+# linear problem, all of it explicit, `u′ = (L + M)u + a cos(3t) v`, with no
+# stage solver; the `t`-dependent case sees every explicit abscissa.
+function oracle_explicit_f!(du, u, a, t)
+    mul!(du, ORACLE_L + ORACLE_M, u)
+    du .+= (a * cos(3t)) .* ORACLE_v
+    return nothing
+end
+function upstream_explicit_run(alg, a; dt = 0.1, n = 10)
+    prob = LowRK.ODEProblem(oracle_explicit_f!, copy(ORACLE_u0), (0.0, n * dt), a)
+    sol = LowRK.solve(prob, alg; dt, adaptive = false, save_everystep = false)
+    return sol.u[end]
+end
+function our_explicit_run(tab, a; dt = 0.1, n = 10)
+    prob = IMEXProblem(oracle_explicit_f!, nothing, copy(ORACLE_u0), (0.0, n * dt), a)
+    return solve(prob, tab; dt).u
+end
+
+const EXPLICIT_ORACLE_TABLE = [
+    (alg = LowRK.Euler(), make = Euler),
+    (alg = LowRK.RK4(), make = RK4),
+    (alg = SSPRK.SSPRK33(), make = SSPRK33),
+]
+
+# A transcription error or a mistimed stage in an explicit tableau shows
+# as a difference far above round-off. Measured over ten steps of
+# Δt = 0.1, autonomous and `t`-dependent: 3.5e−17 and 9.4e−17 for Euler,
+# 2.8e−17 and 3.8e−17 for RK4, 2.8e−17 and 1.2e−16 for SSPRK(3,3).
+@testset "Each explicit tableau agrees with OrdinaryDiffEq to 1e−12 over ten steps, with t or not" begin
+    for spec in EXPLICIT_ORACLE_TABLE, a in (AUTONOMOUS, T_DEPENDENT)
+        d = maximum(abs, upstream_explicit_run(spec.alg, a) - our_explicit_run(spec.make(), a))
+        @test d < 1e-12
+    end
 end

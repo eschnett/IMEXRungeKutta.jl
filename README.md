@@ -27,7 +27,9 @@ The first intended user is TreeGRRMHD.jl; nothing here depends on it.
 The tableaus are SSP2(2,2,2), SSP2(3,2,2), SSP2(3,3,2), SSP3(3,3,2) and
 SSP3(4,3,3) of Pareschi & Russo (2005), and ARS(2,2,2) and ARS(4,4,3) of
 Ascher, Ruuth & Spiteri (1997), all held in closed form in extended
-precision. The interface is CommonSolve's `init`, `step!`, `solve!` and
+precision. Three purely explicit tableaus, explicit Euler (for debugging),
+classical RK4 and Shu & Osher's SSPRK(3,3), run through the same
+integrator with no stage solver. The interface is CommonSolve's `init`, `step!`, `solve!` and
 `solve`, so the package loads beside SciMLBase or OrdinaryDiffEq without a
 name clash. It
 has stage and step limiter hooks, works for any array type that
@@ -85,12 +87,27 @@ quasi-steady state `u ≈ ū + ε cos t`. SSP3(4,3,3), the intended
 production scheme, is not: in that limit its result is off it by `O(Δt)`,
 here by about `−0.28 Δt cos t` (see `CODE.md`, "Tableaus").
 
+A purely explicit tableau, `Euler()`, `RK4()` or `SSPRK33()`, makes no
+stage solve, so the stage solver may be `nothing`:
+
+```julia
+# u′ = −u with classical RK4: four evaluations per step, and no solver.
+f_decay!(du, u, p, t) = (du .= .-u; nothing)
+explicit = solve(IMEXProblem(f_decay!, nothing, [1.0], (0.0, 1.0)), RK4(); dt = 0.1)
+explicit.u[1] - exp(-1.0)       # ≈ 3.3e-7, RK4's error at Δt = 0.1
+```
+
+Its first stage reads `uⁿ` itself, so only the step limiter limits it:
+pass a correction that must reach every right-hand-side input as both
+`stage_limiter` and `step_limiter` (`CODE.md`, "Explicit tableaus").
+
 ## Status
 
 **Version 1.0.0.** `IMEXProblem`, `init`, `step!`, `solve!` and `solve`,
-with the stage and step limiters, for all seven named tableaus
+with the stage and step limiters, for all ten named tableaus
 (`IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP2332`, `IMEXSSP3332`, `IMEXSSP3433`,
-`ARS222`, `ARS443`) and a caller's own `IMEXTableau`. The stage arithmetic
+`ARS222`, `ARS443`, and the explicit `Euler`, `RK4`, `SSPRK33`) and a
+caller's own `IMEXTableau`. The stage arithmetic
 is one fused broadcast per combination by default, for any array type.
 For a CPU `Array` with threads, `init(...; partition = :even)`, or an explicit partition with one
 collection of index ranges per thread, runs each combination on every
@@ -106,7 +123,8 @@ What is tested, and recorded in `CODE.md`:
 - the observed orders, the order in the stiff limit (SSP3(4,3,3) drops
   from 3 to 2 there), where a step lands as `ε → 0`, and total variation
   under upwind advection;
-- agreement with OrdinaryDiffEqSDIRK to round-off;
+- agreement with OrdinaryDiffEqSDIRK to round-off, and for the explicit
+  tableaus with OrdinaryDiffEqLowOrderRK and OrdinaryDiffEqSSPRK;
 - a PDE, the Jin–Xin relaxation of 2D Burgers' equation on a 3 × 20 × 20
   `Array` state, in `examples/jin_xin_2d.jl`: run it with
   `julia --project=. examples/jin_xin_2d.jl`;
