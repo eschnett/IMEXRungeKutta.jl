@@ -45,7 +45,6 @@ and the open questions. Erik decided every proposal the steps made on
 2026-09-24, the last (fresh tasks rather than persistent workers) through
 the Symmetry run he asked for. Open or pending:
 - where a TreeAMR state vector's ownership partition comes from (open);
-- the v1.0.0 tag, which is Erik's (below);
 - #4620 upstream ("Repository facts").
 
 What exists:
@@ -110,12 +109,12 @@ What exists:
 - `.github/workflows/CI.yml`, with five cells (`CODE.md`, "File
   layout"), and `.github/dependabot.yml`;
 - `README.md`, with the CI and Codecov badges, installation by URL, the
-  worked example and the 1.0.0 status.
+  worked example and the 1.2.0 status.
 
 **TreeGRRMHD's step 5 may start.** It needs 4b, which is this step 2. It
 adds the package by URL, now the remote's,
-`Pkg.add(url = "https://github.com/eschnett/IMEXRungeKutta.jl")`, and,
-once Erik has tagged it, with `rev = "v1.0.0"`. On Metal, each new state
+`Pkg.add(url = "https://github.com/eschnett/IMEXRungeKutta.jl", rev =
+"v1.2.0")`, or the latest tag. On Metal, each new state
 length costs about a second of kernel compilation in Metal's broadcast
 (`CODE.md`, "On a device"), which a regrid pays.
 
@@ -124,10 +123,11 @@ SSP3(4,3,3), its L-stability, its order in the stiff limit and where its
 step ends there, are in `CODE.md`, "Where a step ends in the stiff limit"
 and "Validation".
 
-**1.0.0 is prepared, not tagged.** `Project.toml` says 1.0.0 (Erik's
-decision, 2026-09-24; no 0.1.0 was ever tagged). The license is committed,
-`main` is on the remote, and CI is green there. The tag, and any
-registration, are Erik's. With 1.0.0 the interface in `CODE.md`, "The
+**The releases are tagged** (2026-09-26): `v1.0.0` (2026-09-24, Erik's
+decision; no 0.1.0 was ever tagged), `v1.1.0` (the explicit tableaus) and
+`v1.2.0` (scratch reuse), each at the commit that bumped `Project.toml`.
+The package is not registered; tags and any registration are Erik's.
+Since 1.0.0 the interface in `CODE.md`, "The
 interface" and "The callback contracts", is the public API under semantic
 versioning: a change to it is a major version.
 

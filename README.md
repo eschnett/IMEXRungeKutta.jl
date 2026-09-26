@@ -43,7 +43,7 @@ package design, why an existing package does not fit, and the test plan.
 The package is not registered. Add it by its URL, at the release tag:
 
     using Pkg
-    Pkg.add(url = "https://github.com/eschnett/IMEXRungeKutta.jl", rev = "v1.0.0")
+    Pkg.add(url = "https://github.com/eschnett/IMEXRungeKutta.jl", rev = "v1.2.0")
 
 ## Example
 
@@ -103,7 +103,7 @@ pass a correction that must reach every right-hand-side input as both
 
 ## Status
 
-**Version 1.0.0.** `IMEXProblem`, `init`, `step!`, `solve!` and `solve`,
+**Version 1.2.0.** `IMEXProblem`, `init`, `step!`, `solve!` and `solve`,
 with the stage and step limiters, for all ten named tableaus
 (`IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP2332`, `IMEXSSP3332`, `IMEXSSP3433`,
 `ARS222`, `ARS443`, and the explicit `Euler`, `RK4`, `SSPRK33`) and a
