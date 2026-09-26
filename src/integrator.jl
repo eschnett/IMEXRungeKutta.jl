@@ -133,9 +133,58 @@ function resolve_partition(u0, partition)
 end
 
 """
+    resolve_reuse(reuse, tab, u0, u, partition)
+
+The `reuse` keyword of `init`, checked: `nothing` to allocate the scratch
+afresh, or the scratch tuple of the integrator `reuse`, for the new plan
+to take in its order. The scratch must fit the new problem, and each
+misfit is an `ArgumentError` that says which: another scratch count,
+array type, element type or axes than `similar(u0)` would give, another
+partition (`same_partition`), or a scratch array that is the new
+`integ.u` itself. A different tableau with the same scratch count fits,
+since no scratch array carries a value into a step. See `CODE.md`,
+"Scratch reuse".
+"""
+resolve_reuse(::Nothing, tab, u0, u, partition) = nothing
+function resolve_reuse(reuse, tab, u0, u, partition)
+    throw(ArgumentError("init: reuse = $(repr(reuse; context = :limit => true)) must \
+                         be nothing or an IMEXIntegrator whose scratch the new \
+                         integrator takes over"))
+end
+function resolve_reuse(reuse::IMEXIntegrator, tab, u0, u, partition)
+    scratch = reuse.plan.scratch
+    n = scratch_count(tab)
+    length(scratch) == n ||
+        throw(ArgumentError("init: reuse has $(length(scratch)) scratch arrays \
+                             ($(reuse.tableau.name)), but $(tab.name) needs $n; the \
+                             scratch can only be reused between tableaus with the same \
+                             count"))
+    same_partition(reuse.plan.partition, partition) ||
+        throw(ArgumentError("init: reuse was built with another partition than this \
+                             integrator's; its scratch was first-touched for that \
+                             partition, so a new partition must allocate afresh"))
+    # The type `similar(u0)` would have, without allocating it. Where
+    # inference gives only an abstract type, this checks less.
+    S = Base.promote_op(similar, typeof(u0))
+    for a in scratch
+        (a isa S && eltype(a) == eltype(u0)) ||
+            throw(ArgumentError("init: reuse's scratch is a $(typeof(a)), but similar(u0) \
+                                 is a $S with element type $(eltype(u0))"))
+        axes(a) == axes(u0) ||
+            throw(ArgumentError("init: reuse's scratch has axes $(axes(a)), but the \
+                                 state has $(axes(u0)); a state of another shape must \
+                                 allocate afresh"))
+        a === u &&
+            throw(ArgumentError("init: the state integ.u is one of reuse's scratch \
+                                 arrays; the plan's arrays must be distinct"))
+    end
+    return scratch
+end
+
+"""
     init(prob::IMEXProblem, tab::IMEXTableau; dt,
          stage_limiter = nothing, step_limiter = nothing,
-         partition = nothing, alias_u0 = false)
+         partition = nothing, alias_u0 = false, reuse = nothing)
 
 Build an integrator for `prob` with the tableau `tab` (such as
 [`IMEXSSP3433`](@ref)`()`), for fixed steps of at most `dt`.
@@ -185,16 +234,30 @@ Build an integrator for `prob` with the tableau `tab` (such as
   scratch through the partition, for first touch, and a step allocates a
   few small objects per thread per combination, independent of the state
   size (none at one thread).
+- **`reuse = integ′`**, an earlier integrator, makes this one take
+  `integ′`'s scratch arrays instead of allocating and first-touching its
+  own: for a chunked driver, whose next chunk on the same grid has a new
+  `Δt`, `tspan`, `p` or callbacks. The state is the caller's to reuse,
+  with `u0 = integ′.u` and `alias_u0 = true`. The scratch must fit: the
+  same number of scratch arrays for `tab` (so any tableau with as many,
+  since no array keeps a role between steps), the array type,
+  element type and axes that `similar(u0)` would give, and the same
+  partition; a misfit is an `ArgumentError`, never a silent allocation.
+  The two integrators then share the scratch. Since no scratch value
+  carries over from one step to the next, they may step one after the
+  other, but not at the same time from different tasks.
 
 This builds the stage plan: the scratch arrays, from `similar(u0)` and
-written once, and the tableau's nonzero pattern compiled into types, so
-that [`step!`](@ref) is type-stable and, on the broadcast path,
-allocation-free. See `CODE.md`, "The interface", "Time and the step
-count", "The stage plan and storage" and "Stage arithmetic".
+written once (or `reuse`'s, as they are), and the tableau's nonzero
+pattern compiled into types, so that [`step!`](@ref) is type-stable and,
+on the broadcast path, allocation-free. See `CODE.md`, "The interface",
+"Time and the step count", "The stage plan and storage", "Scratch reuse"
+and "Stage arithmetic".
 """
 function CommonSolve.init(prob::IMEXProblem, tab::IMEXTableau; dt,
                           stage_limiter = nothing, step_limiter = nothing,
-                          partition = nothing, alias_u0::Bool = false)
+                          partition = nothing, alias_u0::Bool = false,
+                          reuse = nothing)
     u0 = prob.u0
     T = real(eltype(u0))
     T <: AbstractFloat ||
@@ -221,7 +284,8 @@ function CommonSolve.init(prob::IMEXProblem, tab::IMEXTableau; dt,
                              for a purely explicit tableau such as RK4()"))
     part = resolve_partition(u0, partition)
     u = alias_u0 ? u0 : copy_initial(u0, part)
-    plan = build_plan(tab, u, u0, T, Δt, part)
+    reused = resolve_reuse(reuse, tab, u0, u, part)
+    plan = build_plan(tab, u, u0, T, Δt, part, reused)
     return IMEXIntegrator(u, t0, Δt, prob.p, 0, nsteps, tab, t0, t1, prob.f_exp!,
                           prob.solve_imp!, stage_limiter, step_limiter, plan)
 end

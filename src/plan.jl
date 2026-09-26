@@ -79,15 +79,19 @@ struct StagePlan{Stages<:Tuple,Update<:Tuple,Scratch<:Tuple,P}
 end
 
 """
-    build_plan(tab, u, u0, T, Δt, partition)
+    build_plan(tab, u, u0, T, Δt, partition, reused = nothing)
 
 Compile `tab` into a [`StagePlan`](@ref) for the state `u` (which is
 `integ.u`), the arithmetic type `T` and the step `Δt`, whose type is the
 time type. The scratch arrays come from `similar(u0)`, and each is written
 once, through `partition` (`first_touch!`). There are exactly
-`scratch_count(tab)` of them.
+`scratch_count(tab)` of them. With `reused`, a tuple of that many arrays
+that `init` has checked (`resolve_reuse`), the plan takes those, in their
+order, and neither allocates nor writes any ("Scratch reuse" in
+`CODE.md`).
 """
-function build_plan(tab::IMEXTableau, u, u0, ::Type{T}, Δt::Tt, partition) where {T,Tt}
+function build_plan(tab::IMEXTableau, u, u0, ::Type{T}, Δt::Tt, partition,
+                    reused = nothing) where {T,Tt}
     s = nstages(tab)
     sol = solves(tab)
     ex = explicit_used(tab)
@@ -97,7 +101,8 @@ function build_plan(tab::IMEXTableau, u, u0, ::Type{T}, Δt::Tt, partition) wher
 
     scratch = Any[]
     function allocate()
-        a = first_touch!(similar(u0), partition)
+        a = reused === nothing ? first_touch!(similar(u0), partition) :
+            reused[length(scratch) + 1]
         push!(scratch, a)
         return a
     end
