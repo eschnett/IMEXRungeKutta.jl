@@ -115,7 +115,11 @@ thread at once, each element on the thread that owns it, with bitwise the
 same result. `step!` is type-stable. On the
 broadcast path it is allocation-free for a CPU `Array`; by owner it
 allocates a few hundred bytes per thread per combination, whatever the
-state size, and nothing at one thread.
+state size, and nothing at one thread. A chunked driver, with one
+integrator per chunk, passes the previous chunk's integrator as
+`init(...; reuse = integ)` while the grid is unchanged, to take over its
+scratch arrays instead of allocating and first-touching new ones
+(`CODE.md`, "Scratch reuse").
 
 What is tested, and recorded in `CODE.md`:
 - the tableaus' order, stiff accuracy, L-stability and SSP coefficient,

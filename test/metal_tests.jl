@@ -163,6 +163,31 @@ end
         @info "Metal − CPU, in eps(Float32)·max|u|, per step" tab.name Tt d = repr(d)
     end
 
+    # Reuse on a device checks the scratch's type by inference
+    # (`Base.promote_op(similar, …)`), which must accept the device's own
+    # arrays and refuse host ones; and a reused plan must run the same
+    # kernels as a fresh one ("Scratch reuse" in `CODE.md`).
+    @testset "Two chunks reusing the scratch on Metal equal fresh ones: $(make().name)" for
+            make in METAL_TABLEAUS
+        tab = make()
+        function chunks(reuse)
+            prob = metal_problem(MtlArray, METAL_N, (0.0, 0.5))
+            a = init(prob, tab; dt = 1 // 10, alias_u0 = true,
+                     stage_limiter = floor_limiter!, step_limiter = floor_limiter!)
+            solve!(a)
+            prob2 = IMEXProblem(prob.f_exp!, prob.solve_imp!, a.u, (0.5, 1.0), prob.p)
+            b = init(prob2, tab; dt = 1 // 14, alias_u0 = true,
+                     reuse = reuse ? a : nothing, stage_limiter = floor_limiter!,
+                     step_limiter = floor_limiter!)
+            @test all(map(===, b.plan.scratch, a.plan.scratch)) == reuse
+            return Array(solve!(b).u)
+        end
+        @test chunks(true) == chunks(false)
+        host = metal_init(metal_problem(identity, METAL_N, (0.0, 1.0)), tab)
+        @test_throws ArgumentError init(metal_problem(MtlArray, METAL_N, (0.0, 1.0)), tab;
+                                        dt = 1 // 10, reuse = host)
+    end
+
     # A step that copied the state to the host, or allocated scratch per
     # step, would allocate in proportion to the state; Metal's launches
     # allocate a fixed amount each.

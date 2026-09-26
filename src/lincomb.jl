@@ -125,6 +125,20 @@ struct OwnerPartition{H}
     hook::H
 end
 
+"""
+    same_partition(a, b)
+
+Whether two resolved partitions run the stage arithmetic alike: both the
+broadcast (`nothing`), or both by owner with the same state length and
+the same ranges on every thread. The test `hook` is ignored. `init`
+reuses scratch only between the same partition, so that the pages a
+first touch placed are where the new plan's threads use them ("Scratch
+reuse" in `CODE.md`).
+"""
+same_partition(::Nothing, ::Nothing) = true
+same_partition(a::OwnerPartition, b::OwnerPartition) = a.n == b.n && a.ranges == b.ranges
+same_partition(a, b) = false
+
 call_hook(::Nothing, c, j, r) = nothing
 call_hook(hook, c, j, r) = (hook(c, j, r); nothing)
 

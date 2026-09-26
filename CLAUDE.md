@@ -70,12 +70,15 @@ What exists:
   `partition` argument: `nothing` is one fused broadcast, and an
   `OwnerPartition` the by-owner path of step 5, a loop per range on a
   sticky task placed on the owning thread (`by_owner`). Also the
-  partition's checks (`owner_partition`), `even_partition` (`:even`) and
-  `block_partition`, a helper for segmented block layouts;
-- `src/plan.jl`: `Stage`, `StagePlan`, `build_plan` and `plan_calls`;
+  partition's checks (`owner_partition`), `same_partition`,
+  `even_partition` (`:even`) and `block_partition`, a helper for
+  segmented block layouts;
+- `src/plan.jl`: `Stage`, `StagePlan`, `build_plan` (which takes reused
+  scratch) and `plan_calls`;
 - `src/integrator.jl`: `IMEXProblem`, `IMEXIntegrator`, and the methods
-  of `init` (with `partition`, checked by `resolve_partition`), `step!`,
-  `solve!` and `solve`;
+  of `init` (with `partition`, checked by `resolve_partition`, and
+  `reuse`, checked by `resolve_reuse`; `CODE.md`, "Scratch reuse",
+  2026-09-26), `step!`, `solve!` and `solve`;
 - `test/runtests.jl`, `test/scaffold_tests.jl`,
   `test/tableau_properties.jl` (test-only helpers: order conditions,
   `R(z)`, the E-polynomial, the SSP coefficient), `test/tableau_tests.jl`,
@@ -98,6 +101,8 @@ What exists:
   broadcast against by owner, with a persistent-worker prototype for
   comparison) and `bench/symmetry_stage_arithmetic.sh`, its SLURM job. The
   numbers are in `CODE.md`, "By owner, as built";
+- scratch reuse across chunks (2026-09-26): `test/reuse_tests.jl`, after
+  `owner_tests.jl`, whose helpers it uses;
 - `examples/jin_xin_2d.jl`, the Jin–Xin relaxation of 2D Burgers on a
   3 × 20 × 20 `Array` state, and `test/jin_xin_tests.jl`, which includes
   it (`CODE.md`, "Testing", A PDE). Run it on its own with

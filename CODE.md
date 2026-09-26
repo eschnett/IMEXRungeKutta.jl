@@ -653,7 +653,9 @@ Drafted and reviewed 2026-09-24. The first caller is TreeGRRMHD, whose `CODE.md`
 - one integrator over TreeAMR's flat multi-set state vector, on CPU
   threads or on a device;
 - a chunked driver with a fixed `Δt` per chunk and a fresh integrator
-  after each regrid;
+  per chunk, which takes the previous chunk's scratch while the grid is
+  unchanged ([Scratch reuse](#scratch-reuse-decided-2026-09-26); amended
+  2026-09-26);
 - a stage solver that flags and counts its own outcomes;
 - limiters. TreeGH's are integrator-free (GH-4,
   `gh_stage_limit!(u, p, t)`), and TreeHydro's take OrdinaryDiffEq's
@@ -698,7 +700,7 @@ The alternatives, not taken:
     prob  = IMEXProblem(f_exp!, solve_imp!, u0, (t0, t1), p = nothing)
     integ = init(prob, IMEXSSP3433(); dt,
                  stage_limiter = nothing, step_limiter = nothing,
-                 partition = nothing, alias_u0 = false)
+                 partition = nothing, alias_u0 = false, reuse = nothing)
     step!(integ)                       # one step
     solve!(integ)                      # step to t1; returns integ
     integ = solve(prob, IMEXSSP3433(); dt)  # init, then solve!
@@ -713,6 +715,9 @@ The alternatives, not taken:
 - **`p` is optional** and defaults to `nothing`, as in SciML.
 - **`init` copies `u0`**, unless `alias_u0 = true`. Aliasing saves one
   state-sized array.
+- **`reuse = integ′`** makes `init` take an earlier integrator's scratch
+  instead of allocating its own (added 2026-09-26; [Scratch
+  reuse](#scratch-reuse-decided-2026-09-26)).
 - **The caller may change `integ.u` in place between steps**
   (decided). Nothing
   carries over from one step to the next: no first-same-as-last stage and
@@ -947,7 +952,9 @@ not allocated, so no coefficient multiplies it, and `0·NaN` cannot occur
 
 **Storage.** All scratch comes from `similar(u0)`. `init` writes it once
 through the same partition as the stage arithmetic (below), so that
-first touch puts each page on the NUMA domain that will use it. Nothing
+first touch puts each page on the NUMA domain that will use it. Scratch
+taken over with `reuse` is neither allocated nor written again ([Scratch
+reuse](#scratch-reuse-decided-2026-09-26); amended 2026-09-26). Nothing
 reads that initial value. `u★` is formed in the array that will then
 hold `d_k`, since `d_k = U − u★` can overwrite `u★` element by element.
 So the scratch is:
@@ -997,7 +1004,7 @@ What else step 2 settled (proposed in step 2, decided 2026-09-24):
   `solve_imp!` call, as "One step" says; its `u★` then takes the extra
   array. No named tableau has either.
 - **First touch writes zero.** `init` fills each scratch array with
-  `zero(eltype(u0))`, through the partition.
+  `zero(eltype(u0))`, through the partition, unless it reuses it.
 - **`integ.u` is first-touched too** (proposed in step 5, decided
   2026-09-24). By owner, and unless `alias_u0 = true`, `init` makes
   `integ.u` as `similar(u0)` and copies `u0` into it through the
@@ -1007,6 +1014,66 @@ What else step 2 settled (proposed in step 2, decided 2026-09-24):
 - **The plan checks itself.** `init` throws an internal error if the plan
   allocated other than `scratch_count(tab)` arrays, or if a term reads an
   array the pattern did not allocate.
+
+### Scratch reuse (decided 2026-09-26)
+
+A chunked driver, TreeGeneralizedHarmonic's and TreeGRRMHD's, builds one
+integrator per chunk, since a chunk has its own `Δt` and `tspan` and
+often its own `p`, and `init` fixes all three. Between chunks it
+evaluates a regridding criterion, and mostly the grid stays as it was.
+A fresh `init` then allocates and first-touches `scratch_count(tab)`
+state-sized arrays again, which is all of its cost that scales with the
+state: TreeGeneralizedHarmonic measured 0.13–0.36 s per `init` of `RK4()`
+(five arrays, 1.6 GB) at 64 threads on a 320 MB state on Symmetry
+(2026-09-26), where it wanted none.
+
+    integ = init(prob′, RK4(); dt, partition, alias_u0 = true,
+                 reuse = integ)
+
+- **What is reused.** With `reuse = integ′`, the plan takes `integ′`'s
+  scratch arrays, in their order, instead of allocating, and does not
+  write them: their pages are where the first touch through the same
+  partition put them. Everything else is built afresh, the coefficients
+  for the new `Δt` included; that costs microseconds. The state is not
+  `reuse`'s business: a driver that steps one state vector passes it as
+  `u0 = integ′.u` with `alias_u0 = true`, as it already did.
+- **Why it is safe.** No scratch value carries over from one step to the
+  next: every array is written in a step before that step reads it (the
+  NaN tests of Mechanics). So the arrays may even change their roles,
+  and a different tableau with the same scratch count may take them.
+- **The two integrators share the scratch** afterwards. For the same
+  reason they may step one after the other, and each stays correct (a
+  test), but not at the same time from different tasks.
+- **A misfit is refused** (Erik's decision, over a silent fallback to
+  fresh arrays, which would bring the cost back unnoticed after a
+  regrid), each with an `ArgumentError` that says which:
+  - `reuse` is neither `nothing` nor an `IMEXIntegrator`;
+  - the scratch count differs;
+  - a scratch array is not of the type `similar(u0)` would give (checked
+    by `Base.promote_op(similar, typeof(u0))`, without allocating a
+    state; where inference gives an abstract type this checks less), or
+    has another element type or other axes than `u0`;
+  - the partition differs: the broadcast against by owner, or two owner
+    partitions with another length or other ranges. A regrid that keeps
+    the length but moves ownership must allocate afresh, so that first
+    touch stays right;
+  - the new `integ.u` is one of the scratch arrays.
+- **What it saves** (measured 2026-09-26, on the M3 under Julia 1.13.1,
+  with a load average of 40–55 from other work, so the numbers are
+  rough). `init` of `RK4()` on a 10⁸-byte `Float64` state with
+  `alias_u0 = true` allocates five such arrays: the first `init` on a
+  fresh state took 35–47 ms at one thread and 25–34 ms at four,
+  broadcast or `:even` (one first run 69 ms), and with `reuse` 0.12–0.19
+  ms, then about 50 µs once warm, allocating 62 kB whatever the state
+  size. A repeated fresh `init` in one process takes 4–6 ms, since macOS
+  hands freed pages back already mapped. Symmetry's 0.13–0.36 s at 64
+  threads is the cold case at 3.2 times the state.
+- **The alternatives, not taken.** A `reinit!(integ, …)` that changes the
+  integrator in place would make `dt`, `nsteps`, `t0`, `t1`, `p` and the
+  plan mutable, against the step-2 decision that every field but `t` and
+  `nstep` is `const`, and would take SciMLBase's name. A workspace object
+  passed to `init` would be one more public type, and a second place to
+  give the partition.
 
 ### Stage arithmetic (decided)
 
@@ -1348,6 +1415,9 @@ What it says:
   (amended in step 3). Step 5 adds `owner_tests.jl`, the by-owner items of
   Mechanics, in a testset of its own after `mechanics_tests.jl`, whose
   corner tableaus it reuses (proposed in step 5, decided 2026-09-24).
+  `reuse_tests.jl`, after it, holds the items of [Scratch
+  reuse](#scratch-reuse-decided-2026-09-26), with its problem, states and
+  partitions (added 2026-09-26).
   `jin_xin_tests.jl` includes `examples/jin_xin_2d.jl` and asserts what
   it computes (amended 2026-09-24; see "A PDE" under
   [Testing](#testing-decided)).
@@ -1572,6 +1642,12 @@ failure mode it guards.
     resized `integ.u` refused; `@inferred step!`; and the allocations of
     [By owner, as built](#by-owner-as-built-measured-in-step-5);
   - a Float32 run works;
+  - also (added 2026-09-26), for `reuse`: chunks that reuse the scratch
+    give the same bits as fresh ones, for every tableau, on the broadcast
+    and by owner, with other `Δt`s and NaN in the reused arrays; `init`
+    takes the old arrays as they are and writes none, and allocates less
+    than one state; two integrators sharing scratch step in turn as if
+    apart; each misfit is refused;
   - also (amended in step 2): three tableaus of a caller's own reach the
     plan's corner cases, the extra array, an empty-row solving stage and a
     dead stage; the call sequence of each step equals one rederived from
