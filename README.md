@@ -43,7 +43,7 @@ package design, why an existing package does not fit, and the test plan.
 The package is not registered. Add it by its URL, at the release tag:
 
     using Pkg
-    Pkg.add(url = "https://github.com/eschnett/IMEXRungeKutta.jl", rev = "v1.2.0")
+    Pkg.add(url = "https://github.com/eschnett/IMEXRungeKutta.jl", rev = "v1.3.0")
 
 ## Example
 
@@ -103,7 +103,7 @@ pass a correction that must reach every right-hand-side input as both
 
 ## Status
 
-**Version 1.2.0.** `IMEXProblem`, `init`, `step!`, `solve!` and `solve`,
+**Version 1.3.0.** `IMEXProblem`, `init`, `step!`, `solve!` and `solve`,
 with the stage and step limiters, for all ten named tableaus
 (`IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP2332`, `IMEXSSP3332`, `IMEXSSP3433`,
 `ARS222`, `ARS443`, and the explicit `Euler`, `RK4`, `SSPRK33`) and a
@@ -119,7 +119,9 @@ state size, and nothing at one thread. A chunked driver, with one
 integrator per chunk, passes the previous chunk's integrator as
 `init(...; reuse = integ)` while the grid is unchanged, to take over its
 scratch arrays instead of allocating and first-touching new ones
-(`CODE.md`, "Scratch reuse").
+(`CODE.md`, "Scratch reuse"). MultiFloats' software double-floats,
+`Float32x2` and `Float64x2`, work as the state's real type and as the
+time type, and `Float32x2` on Metal too (`CODE.md`, "Software floats").
 
 What is tested, and recorded in `CODE.md`:
 - the tableaus' order, stiff accuracy, L-stability and SSP coefficient,
