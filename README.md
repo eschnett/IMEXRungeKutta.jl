@@ -132,10 +132,13 @@ What is tested, and recorded in `CODE.md`:
 - a PDE, the Jin–Xin relaxation of 2D Burgers' equation on a 3 × 20 × 20
   `Array` state, in `examples/jin_xin_2d.jl`: run it with
   `julia --project=. examples/jin_xin_2d.jl`;
-- a `Float32` run on an Apple GPU, with an `MtlArray` state and scalar
-  indexing disallowed, which agrees with the same run on the CPU. It runs
-  on request only, in an environment of its own; `test/metal_tests.jl`
-  says how.
+- MultiFloats' `Float32x2` and `Float64x2` as the state's and the
+  time's type, each run within a few `eps` of the same run in 256-bit
+  `BigFloat`;
+- a `Float32` and a `Float32x2` run on an Apple GPU, with an `MtlArray`
+  state and scalar indexing disallowed, which agree with the same runs
+  on the CPU. It runs on request only, in an environment of its own;
+  `test/metal_tests.jl` says how.
 
 Known limits:
 - SSP2(3,3,2) is in neither OrdinaryDiffEq nor ClimaTimeSteppers, so it

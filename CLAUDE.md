@@ -50,9 +50,9 @@ the Symmetry run he asked for. Open or pending:
 What exists:
 - `Project.toml` with CommonSolve as the one run-time dependency, and
   `test/Project.toml`, the test environment: CommonSolve, LinearAlgebra,
-  OrdinaryDiffEqLowOrderRK (compat `2.2.5`), OrdinaryDiffEqSDIRK (compat
-  `2.9.6`) and OrdinaryDiffEqSSPRK (compat `2.3.2`), the oracles, TOML and
-  Test;
+  MultiFloats (compat `3.3.2`), OrdinaryDiffEqLowOrderRK (compat
+  `2.2.5`), OrdinaryDiffEqSDIRK (compat `2.9.6`) and OrdinaryDiffEqSSPRK
+  (compat `2.3.2`), the oracles, TOML and Test;
 - `src/IMEXRungeKutta.jl`, the module, which re-exports CommonSolve's
   `init`, `solve`, `solve!` and `step!` and exports `IMEXProblem`,
   `IMEXTableau` and the ten named tableaus;
@@ -91,7 +91,8 @@ What exists:
   (OrdinaryDiffEqSDIRK); the numbers are in `CODE.md`, "Validation";
 - the device smoke run of step 4: `test/metal_tests.jl`, gated by
   `IMEXRUNGEKUTTA_TEST_METAL=1` and run in its own environment,
-  `test/metal/Project.toml` (Metal, Test, and this package from `../..`);
+  `test/metal/Project.toml` (Metal, MultiFloats, Test, and this package
+  from `../..`);
   it is not part of `Pkg.test()`, and the ordinary suite checks that it
   never sees Metal. The numbers are in `CODE.md`, "On a device";
 - the owner path of step 5: `test/owner_tests.jl` (bitwise identity with
@@ -102,6 +103,13 @@ What exists:
   numbers are in `CODE.md`, "By owner, as built";
 - scratch reuse across chunks (2026-09-26): `test/reuse_tests.jl`, after
   `owner_tests.jl`, whose helpers it uses;
+- MultiFloats' `Float32x2` and `Float64x2` as state and time type
+  (2026-09-28): `step_count` and `convert_float` convert through a
+  256-bit `BigFloat`, since MultiFloats converts to nothing else, and
+  `init` refuses a `tspan` and `dt` that promote to no concrete float.
+  `test/multifloat_tests.jl`, after `reuse_tests.jl`, is the one file of
+  the suite that loads MultiFloats; the Metal smoke run has Float32x2
+  testsets too (`CODE.md`, "Software floats" and "Float32x2 on Metal");
 - `examples/jin_xin_2d.jl`, the Jin–Xin relaxation of 2D Burgers on a
   3 × 20 × 20 `Array` state, and `test/jin_xin_tests.jl`, which includes
   it (`CODE.md`, "Testing", A PDE). Run it on its own with
@@ -177,7 +185,8 @@ fails with "Package CommonSolve not found".
 **The test environment is large** since step 3 added OrdinaryDiffEqSDIRK
 as the oracle: 142 packages on 1.13, 138 on 1.10; with the explicit
 oracles OrdinaryDiffEqLowOrderRK and OrdinaryDiffEqSSPRK, 144 and 140
-(measured 2026-09-25). Measured on the M3
+(measured 2026-09-25); with MultiFloats, 148 on 1.13 (measured
+2026-09-28). Measured on the M3
 (step 3), from a fresh `JULIA_DEPOT_PATH`, so including the downloads:
 - 1.13.0: 238 s in all. `Pkg.instantiate()` of the package itself, with
   the registry, 49 s; then `Pkg.test()` 189 s, of which resolving and
@@ -327,6 +336,13 @@ implementation plan. The why is in `CODE.md`.
     ARS(4,4,3) with `IMEXTableau("…", Ã, b, A, b)`, built from
     `ARS443()`'s parts.
   - #4620 is under "Repository facts".
+- **MultiFloats converts only through `BigFloat`** (`CODE.md`,
+  "Software floats"). A double-float has no `Int`, `Float64`, `round(Int,
+  …)` or `cos`, so a `T(x)` between two float types in `src/` goes
+  through `convert_float`. Its identity method is bounded,
+  `where {T<:AbstractFloat}`: unbounded, it is not more specific than the
+  `x::AbstractFloat` method, which is then picked even for `x::T` and
+  allocates a `BigFloat` in every callback that uses it.
 - **Mocks** record their calls into buffers preallocated in `p`, so that
   the mechanics tests can also run under the allocation helper.
 - **Metal** (`CODE.md`, "On a device").

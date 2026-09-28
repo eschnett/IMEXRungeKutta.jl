@@ -98,13 +98,17 @@ an integer `m` gives `m`: the ulps of `(t1 − t0)/dt`, and those of `t0`
 and `t1` relative to `dt`, since `t1 − t0` inherits the rounding of both.
 So a chunk meant to be a whole number of steps is not given one more by
 round-off ("Time and the step count" in `CODE.md`).
+
+The integer-valued `n` reaches `Int` through a 256-bit `BigFloat`, since
+a software type such as MultiFloats' `Float64x2` converts to nothing
+else; at a fixed precision, so that a small global one cannot round it.
 """
 function step_count(t0::Tt, t1::Tt, dt::Tt) where {Tt}
     r = (t1 - t0) / dt
     m = round(r)
     tol = 4 * (eps(r) + (eps(abs(t0)) + eps(abs(t1))) / dt)
     n = m ≥ 1 && abs(r - m) ≤ tol ? m : ceil(r)
-    return Int(n)
+    return with_coefficient_precision(() -> Int(BigFloat(n)))
 end
 
 """
@@ -197,7 +201,10 @@ Build an integrator for `prob` with the tableau `tab` (such as
   `t1` and `dt`. The arithmetic type is `T = real(eltype(u0))`, so a
   complex state works, and a `Float32` state with `Float64` time too.
   The coefficients are converted to `T` and the abscissae to the time
-  type, once, here.
+  type, once, here. A software type such as MultiFloats' `Float32x2` or
+  `Float64x2` works as either; a `t`-dependent right-hand side gets its
+  precision only if the time has it too, that is a `tspan` and `dt` of
+  that type.
 - **The limiters**, `stage_limiter!(u, integ, p, t)` and
   `step_limiter!(u, integ, p, t)`, change `u` in place; `nothing` means
   no call. The stage limiter is called on the stage value just before
@@ -267,6 +274,12 @@ function CommonSolve.init(prob::IMEXProblem, tab::IMEXTableau; dt,
     t0, t1 = prob.tspan
     dt isa Real || throw(ArgumentError("init: dt must be a real number, but it is $dt"))
     Tt = float(promote_type(typeof(t0), typeof(t1), typeof(dt)))
+    (isconcretetype(Tt) && Tt <: AbstractFloat) ||
+        throw(ArgumentError("init: tspan and dt, of types $(typeof(t0)), $(typeof(t1)) \
+                             and $(typeof(dt)), promote to $Tt, which is not one \
+                             floating-point type; MultiFloats' Float32x2 and Float64x2, \
+                             for one, do not promote to each other, so give all three in \
+                             one type"))
     t0, t1, dt = Tt(t0), Tt(t1), Tt(dt)
     (isfinite(t0) && isfinite(t1)) ||
         throw(ArgumentError("init: tspan = $((t0, t1)) must be finite"))

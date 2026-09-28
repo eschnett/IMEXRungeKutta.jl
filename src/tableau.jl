@@ -11,6 +11,16 @@ const COEFFICIENT_PRECISION = 256
 
 with_coefficient_precision(f) = setprecision(f, BigFloat, COEFFICIENT_PRECISION)
 
+# The float `x` in the float type `T`, rounded once. A software type such
+# as MultiFloats' `Float32x2` converts only to and from `BigFloat`
+# (`Float64(::Float32x2)` has no method), and a 256-bit `BigFloat` holds
+# every hardware float and every normalized double-float exactly ("Time
+# and the step count" in `CODE.md`).
+convert_float(::Type{T}, x::T) where {T<:AbstractFloat} = x
+function convert_float(::Type{T}, x::AbstractFloat) where {T}
+    return with_coefficient_precision(() -> T(BigFloat(x)))
+end
+
 """
     IMEXTableau(name, Ã, b̃, A, b)
     IMEXTableau{R}(name, Ã, b̃, A, b)

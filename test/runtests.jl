@@ -37,6 +37,9 @@ include("problems.jl")
     @testset "Scratch reuse" begin
         include("reuse_tests.jl")
     end
+    @testset "MultiFloats" begin
+        include("multifloat_tests.jl")
+    end
     @testset "Smoke order" begin
         include("smoke_order_tests.jl")
     end

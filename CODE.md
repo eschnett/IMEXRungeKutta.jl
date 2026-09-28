@@ -103,6 +103,14 @@ existed:
   device](#on-a-device-measured-in-step-4)).
 - **Julia 1.10 floor**, generic in the scalar type `T` (Float32 must
   work).
+  - **MultiFloats' double-floats**, `Float32x2` (about 46 bits, what a
+    device without `Float64` can have) and `Float64x2` (about 106 bits),
+    must work as the state's real type and as the time type, on the CPU,
+    by owner, and on Metal (added 2026-09-28, Erik's request). They are
+    software types that convert only to and from `BigFloat`, with no
+    `Int`, `Float64` or `cos`. See [Time and the step
+    count](#time-and-the-step-count-decided) and [On a
+    device](#on-a-device-measured-in-step-4).
 - **Minimal dependencies.** Only CommonSolve at run time (amended
   2026-09-24; this was "at most StaticArrays", with SciMLBase open). See
   [Dependencies and names](#dependencies-and-names-decided). It brings
@@ -113,6 +121,9 @@ existed:
   standard libraries included (measured in step 3). With the explicit
   tableaus' oracles, OrdinaryDiffEqLowOrderRK and OrdinaryDiffEqSSPRK, it
   has 144 and 140: they add only themselves (measured 2026-09-25).
+  MultiFloats, for the double-float tests, is test-only too; with it the
+  test environment has 148 packages on 1.13, and the Metal environment,
+  which also has it, 103 on 1.13 and 101 on 1.10 (measured 2026-09-28).
 
 ## The method
 
@@ -745,6 +756,9 @@ What step 2 settled (proposed in step 2, decided 2026-09-24):
     built](#by-owner-as-built-measured-in-step-5); amended in step 5);
   - a state whose real element type is not an `AbstractFloat`, since the
     coefficients cannot be converted to it;
+  - a `tspan` and `dt` that do not promote to one concrete float type,
+    such as a Float32x2 `tspan` with a Float64x2 `dt`, which MultiFloats
+    promotes to a `UnionAll` (added 2026-09-28);
   - `t1 ≤ t0`, since the integration runs forward over a nonempty
     interval;
   - a `dt` that is not positive and finite, and a non-finite `tspan`;
@@ -855,6 +869,21 @@ step limiter, `integ.u` is undefined.
   `T = real(eltype(u0))`, so a complex state works (the order tests use
   `u′ = iu − u`). Coefficients are converted to `T`, and abscissae to
   the time type. A `Float32` state with `Float64` time is allowed.
+- **Software floats** (added 2026-09-28). MultiFloats' `Float32x2` and
+  `Float64x2` convert to no integer and to no other float except through
+  `BigFloat`: `Int(n)` of the step count had no method, so `init` refused
+  every MultiFloat time until then, and `T(Δt)` has none from a Float32x2
+  time to a `Float64` state. Both conversions now go through a 256-bit
+  `BigFloat` (`step_count`, and `convert_float` in `src/tableau.jl`),
+  which holds every hardware float and every normalized double-float
+  exactly, so each is still rounded once and `init` alone pays for it. A
+  state in a MultiFloat gets its precision in a `t`-dependent `f` or `g`
+  only with a time of that type too. A callback converts `t` itself, and
+  from a MultiFloat time that means through `BigFloat` as well.
+  - Measured on the chunk sweep of "The tolerance", in `Float32x2` and in
+    `Float64x2`: every one of the 288 chunks gets exactly `m` steps, and
+    `Δt/dt − 1` is at most 2.0e−10 and 6.1e−28, in proportion to `eps`
+    as for `Float64`.
 
 ### Tableaus are values (decided)
 
@@ -919,6 +948,12 @@ What step 1 settled (proposed in step 1, decided 2026-09-24):
   - For `T = BigFloat` it has 256 bits, whatever the global precision.
     A state at a higher `BigFloat` precision therefore gets coefficients
     good to about 1e−77, not to its own precision.
+  - For a double-float, "correctly rounded" in the sense of `prevfloat`
+    and `nextfloat` does not apply, since it has no fixed width; each
+    value is within `eps(T)/2` of the 256-bit one, relative (a test in
+    `Float32x2` and `Float64x2`, measured 2026-09-28). 256 bits cover
+    MultiFloats' types up to `Float64x4` (212 bits); `Float64x8` would
+    need a higher `COEFFICIENT_PRECISION`.
 
 Values suffice because the stage plan below gives the compiler the
 tableau's structure anyway. This resolves "values or types".
@@ -1415,7 +1450,10 @@ What it says:
   corner tableaus it reuses (proposed in step 5, decided 2026-09-24).
   `reuse_tests.jl`, after it, holds the items of [Scratch
   reuse](#scratch-reuse-decided-2026-09-26), with its problem, states and
-  partitions (added 2026-09-26).
+  partitions (added 2026-09-26). `multifloat_tests.jl`, after that, holds
+  the double-float items of Mechanics and is the one file that loads
+  MultiFloats; it reuses the helpers of `tableau_tests.jl`,
+  `mechanics_tests.jl` and `owner_tests.jl` (added 2026-09-28).
   `jin_xin_tests.jl` includes `examples/jin_xin_2d.jl` and asserts what
   it computes (amended 2026-09-24; see "A PDE" under
   [Testing](#testing-decided)).
@@ -1640,6 +1678,19 @@ failure mode it guards.
     resized `integ.u` refused; `@inferred step!`; and the allocations of
     [By owner, as built](#by-owner-as-built-measured-in-step-5);
   - a Float32 run works;
+  - also (added 2026-09-28), in `test/multifloat_tests.jl`, for
+    MultiFloats' `Float32x2` and `Float64x2`: a MultiFloat time gets its
+    step count, over the chunk sweep; every tableau's run, with a
+    `t`-dependent `f` and `g`, is within 8 `eps(T)` of the same run in
+    256-bit `BigFloat` (measured: 2.4 and 3.3), where a coefficient,
+    abscissa or `Δt` rounded through a hardware float would leave it
+    1e−7 or 1e−16 off; the state's and the time's types stay separate
+    both ways, and a complex double-float state works; the coefficients
+    are the 256-bit values to `eps(T)/2`; a `tspan` and `dt` in the two
+    different double-floats are refused; and `step!` is inferred,
+    allocation-free on the broadcast path and by owner at one thread,
+    within the by-owner bound at more, and the same bits on either path,
+    for `Float32x2`, `Float64x2` and `Complex{Float64x2}` states;
   - also (added 2026-09-26), for `reuse`: chunks that reuse the scratch
     give the same bits as fresh ones, for every tableau, on the broadcast
     and by owner, with other `Δt`s and NaN in the reused arrays; `init`
@@ -1658,7 +1709,8 @@ failure mode it guards.
     broadcast path and checks that nothing indexes the state. Metal
     enters through an environment of its own, `test/metal/Project.toml`,
     and never through the package's test environment (amended in step
-    4; [On a device](#on-a-device-measured-in-step-4)).
+    4; [On a device](#on-a-device-measured-in-step-4)). It also runs a
+    `Float32x2` state (added 2026-09-28).
 - **Order:**
   - on the split linear ODE `u′ = iu − u`, the observed order equals the
     tableau's, ±0.1;
@@ -1933,7 +1985,8 @@ unless given for each.
 **How Metal gets in** (proposed in step 4, decided 2026-09-24). `PLAN.md`
 offered a separate environment or a conditional `Pkg.add` in the gated
 file. It is the separate environment, `test/metal/Project.toml`:
-- `[deps]` Metal, Test and this package; `[compat]` Metal `"1.11"`;
+- `[deps]` Metal, Test and this package, and since 2026-09-28
+  MultiFloats; `[compat]` Metal `"1.11"` and MultiFloats `"3.3.2"`;
   `[sources]` points this package at `../..`. Julia 1.11 and later read
   `[sources]`; 1.10 ignores it, so the command in `CLAUDE.md` runs
   `Pkg.develop(path = ".")` first, which works on both and leaves the
@@ -2021,6 +2074,33 @@ length seen before costs nothing. After that, enqueueing a step takes
 40–50 µs of host time at 4096 cells. For TreeGRRMHD, where every regrid
 changes the state length, that is about a second per new length on
 Metal, from Metal's broadcast and not from this package.
+
+**Float32x2 on Metal** (added 2026-09-28, measured on the M3 with Metal
+1.11.1 and MultiFloats 3.3.2, under Julia 1.13.1 and 1.10.12; the same on
+both unless given for each). Metal has no
+`Float64`, so MultiFloats' double-`Float32` is the way to about 46 bits
+on it. MultiFloats has extensions for CUDA, AMDGPU and oneAPI, and none
+for Metal; none is needed here: an `MtlArray{Float32x2}` broadcasts, its
+arithmetic being `Float32` operations on the two limbs.
+- The same problem, its data formed in `Float64` and rounded to
+  Float32x2, ten steps of SSP2(2,2,2) and SSP3(4,3,3), with `Float64` and
+  with `Float32x2` time. `f_exp!` takes `cos t` in `BigFloat` on the host
+  for a Float32x2 time, since MultiFloats has no `cos`.
+- **The device agrees with the CPU bitwise**, in all four runs, so the
+  tolerance of 4 `eps(Float32x2) · max|u|` per step, as for `Float32`, is
+  not reached.
+- **It carries Float32x2 precision**: against a CPU run in `Float64` from
+  the same rounded data, the relative difference after ten steps is
+  1.5e−13 (SSP2(2,2,2)) and 2.0e−13 (SSP3(4,3,3)), about 1.5
+  `eps(Float32x2)` per step, and the same with either time type. The
+  test asserts 1e−12; a `Float32` rounding anywhere would be 1e−7.
+- **Host allocations** are those of the launches, as for `Float32`: at
+  4096 cells a step allocates 24 960 B (SSP2(2,2,2)) and 45 888 B
+  (SSP3(4,3,3)) on 1.13, against 24 528 B and 45 360 B in `Float32` in
+  the same run, and at 256 times the state 24 688 B and 45 456 B; on
+  1.10, 37 456 B and 68 368 B against 36 880 B and 67 984 B, and 37 248 B
+  and 69 296 B. The test asserts both to 25%: no per-step conversion
+  through `BigFloat` and nothing state-sized.
 
 ## Open questions
 
