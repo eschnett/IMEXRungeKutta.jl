@@ -97,7 +97,7 @@ function build_plan(tab::IMEXTableau, u, u0, ::Type{T}, Δt::Tt, partition,
     ex = explicit_used(tab)
     imp = implicit_used(tab)
     co = coefficients(T, Tt, tab)
-    ΔtT = T(Δt)
+    ΔtT = convert_float(T, Δt)
 
     scratch = Any[]
     function allocate()

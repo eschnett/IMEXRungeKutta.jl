@@ -1,5 +1,6 @@
 # The device smoke run ("Testing" (Mechanics) in `CODE.md`): a short
-# `Float32` run on an `MtlArray` state with scalar indexing disallowed.
+# `Float32` run on an `MtlArray` state with scalar indexing disallowed,
+# and a `Float32x2` one (MultiFloats' double-`Float32`; added 2026-09-28).
 #
 # It is not part of `Pkg.test()`, and Metal is not in the package's test
 # environment: it has its own, `test/metal/Project.toml`, which develops
@@ -25,6 +26,7 @@ end
 
 using Test
 using Metal: Metal, MtlArray
+using MultiFloats: MultiFloats, Float32x2
 using IMEXRungeKutta
 using IMEXRungeKutta: IMEXProblem
 
@@ -35,9 +37,13 @@ Metal.allowscalar(false)
 # `Δt = 0.1` and some are not, with an explicit part that depends on both
 # `u` and `t`: `u′ = cos t − κu − (u − ū)/ε`. Every callback is one
 # broadcast, and converts the host time to `T` before the kernel sees it.
+# MultiFloats has no `cos`, so a Float32x2 time takes it in `BigFloat`, on
+# the host.
+host_cos(t) = cos(t)
+host_cos(t::MultiFloats.MultiFloat) = cos(BigFloat(t))
 function f_exp_metal!(du, u, p, t)
     T = eltype(du)
-    c = T(cos(t))
+    c = T(host_cos(t))
     κ = p.κ
     @. du = c - κ * u
     return nothing
@@ -66,6 +72,24 @@ function metal_problem(move, N, tspan)
     p = (ū = move(ū), ε = move(ε), κ = 1.0f0 / 2, floor = -10.0f0)
     return IMEXProblem(f_exp_metal!, solve_imp_metal!, move(u0), tspan, p)
 end
+
+# The same problem in `T`, a MultiFloat, or `Float64` for the reference:
+# the data are formed in `Float64` and rounded to Float32x2, and the
+# reference takes those rounded values exactly, so that the two runs
+# start from the same state. MultiFloats converts to `Float64` only
+# through `BigFloat`.
+function metal_problem_mf(move, N, tspan, ::Type{T}) where {T}
+    x = (0:(N - 1)) ./ N
+    mf(a) = Float32x2.(a)
+    to(a) = T === Float64 ? Float64.(BigFloat.(mf(a))) : mf(a)
+    ū = to(@. 1 + x)
+    ε = to(@. 10.0^(-3 + 3x))
+    u0 = to(@. 1 + x + sinpi(2x))
+    p = (ū = move(ū), ε = move(ε), κ = T(1 // 2), floor = T(-10))
+    return IMEXProblem(f_exp_metal!, solve_imp_metal!, move(u0), tspan, p)
+end
+
+tname(Tt) = Tt === Float32x2 ? "Float32x2" : string(Tt)
 
 metal_init(prob, tab) = init(prob, tab; dt = 1 // 10, stage_limiter = floor_limiter!,
                              step_limiter = floor_limiter!)
@@ -163,6 +187,45 @@ end
         @info "Metal − CPU, in eps(Float32)·max|u|, per step" tab.name Tt d = repr(d)
     end
 
+    # Metal has no `Float64`, so Float32x2 is how a device run gets about
+    # 46 bits. A kernel that MultiFloats' double-float arithmetic did not
+    # compile to, or a coefficient, `Δt` or time rounded to `Float32` on
+    # the way, would fail here or leave the device run a `Float32` error
+    # (1e−7) off the `Float64` one, where 1e−14 is due ("On a device" in
+    # `CODE.md`; added 2026-09-28).
+    @testset "Metal carries Float32x2 precision: $(make().name), time $(tname(Tt))" for
+            make in METAL_TABLEAUS, Tt in (Float64, Float32x2)
+        tab = make()
+        tspan = (zero(Tt), one(Tt))
+        dev = metal_init(metal_problem_mf(MtlArray, METAL_N, tspan, Float32x2), tab)
+        cpu = metal_init(metal_problem_mf(identity, METAL_N, tspan, Float32x2), tab)
+        ref = metal_init(metal_problem_mf(identity, METAL_N, (0.0, 1.0), Float64), tab)
+        @test dev.u isa MtlArray{Float32x2}
+        @test typeof(dev.t) === Tt
+        @test dev.nsteps == cpu.nsteps == ref.nsteps == 10
+        wide(u) = Float64.(BigFloat.(Array(u)))
+        d_cpu = Float64[]
+        d_ref = Float64[]
+        for n in 1:10
+            step!(dev)
+            step!(cpu)
+            step!(ref)
+            scale = maximum(abs, ref.u)
+            push!(d_cpu, maximum(abs, wide(dev.u) .- wide(cpu.u)) /
+                         (Float64(BigFloat(eps(Float32x2))) * scale))
+            push!(d_ref, maximum(abs, wide(dev.u) .- ref.u) / scale)
+        end
+        @test dev.t == cpu.t == one(Tt)
+        # The device and the CPU run the same double-float arithmetic; any
+        # difference is a rounding in a kernel, as in Float32 above.
+        @test all(n -> d_cpu[n] ≤ 4n, 1:10)
+        # Against `Float64`: about eps(Float32x2) per step, not eps(Float32).
+        @test all(n -> d_ref[n] ≤ 1e-12, 1:10)
+        @info("Metal Float32x2 − CPU Float32x2, in eps(Float32x2)·max|u|, and − CPU \
+               Float64, relative, per step", tab.name, Tt, d_cpu = repr(d_cpu),
+              d_ref = repr(d_ref))
+    end
+
     # Reuse on a device checks the scratch's type by inference
     # (`Base.promote_op(similar, …)`), which must accept the device's own
     # arrays and refuse host ones; and a reused plan must run the same
@@ -206,5 +269,27 @@ end
         # Nothing state-sized: a host copy of the large state alone would be
         # 4 MiB, some 200 times what a step allocates.
         @test bytes_large ≤ 5 * bytes_small ÷ 4
+    end
+
+    # A Float32x2 step that converted on the host per step (through
+    # `BigFloat`, the only way MultiFloats converts to other types), or
+    # copied the state back, would allocate more than the Float32 step, or
+    # in proportion to the state. Metal cannot be allocation-free: each
+    # launch allocates on the host, as above.
+    @testset "A Float32x2 step on Metal allocates as a Float32 one does: $(make().name)" for
+            make in METAL_TABLEAUS
+        tab = make()
+        tspan = (0.0, 1.0)
+        f32 = metal_init(metal_problem(MtlArray, METAL_N, tspan), tab)
+        small = metal_init(metal_problem_mf(MtlArray, METAL_N, tspan, Float32x2), tab)
+        large = metal_init(metal_problem_mf(MtlArray, 256 * METAL_N, tspan, Float32x2), tab)
+        @test (@inferred step!(small)) === nothing
+        bytes_f32 = metal_step_allocations(f32)
+        bytes_small = metal_step_allocations(small)
+        bytes_large = metal_step_allocations(large)
+        @info("Metal host allocations per step, Float32x2", tab.name, bytes_f32,
+              bytes_small, bytes_large)
+        @test bytes_large ≤ 5 * bytes_small ÷ 4
+        @test bytes_small ≤ 5 * bytes_f32 ÷ 4
     end
 end

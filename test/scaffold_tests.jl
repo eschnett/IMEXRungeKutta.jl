@@ -67,10 +67,12 @@ end
 # on 1.13, so the file does not list it. CommonSolve is listed because the
 # tests load it by name, which the package's own dependency does not
 # allow; its bound is the root `[compat]`'s, through this package.
+# MultiFloats is bounded like an oracle, from the version measured
+# (2026-09-28), since `multifloat_tests.jl` records its numbers.
 @testset "The test-only dependencies are test/Project.toml's, the oracles bounded" begin
-    test_deps = ["CommonSolve", "LinearAlgebra", "OrdinaryDiffEqLowOrderRK",
+    test_deps = ["CommonSolve", "LinearAlgebra", "MultiFloats", "OrdinaryDiffEqLowOrderRK",
                  "OrdinaryDiffEqSDIRK", "OrdinaryDiffEqSSPRK", "TOML", "Test"]
-    oracle_compat = Dict("OrdinaryDiffEqLowOrderRK" => "2.2.5",
+    oracle_compat = Dict("MultiFloats" => "3.3.2", "OrdinaryDiffEqLowOrderRK" => "2.2.5",
                          "OrdinaryDiffEqSDIRK" => "2.9.6", "OrdinaryDiffEqSSPRK" => "2.3.2")
     root = pkgdir(IMEXRungeKutta)
     test_project = TOML.parsefile(joinpath(root, "test", "Project.toml"))
@@ -113,12 +115,13 @@ end
 
 # The Metal environment is run by hand, so nothing else would notice it
 # naming a different package, or no longer pointing at this checkout.
-@testset "test/metal/Project.toml develops this package and adds Metal" begin
+@testset "test/metal/Project.toml develops this package, adds Metal and MultiFloats" begin
     root = pkgdir(IMEXRungeKutta)
     project = TOML.parsefile(joinpath(root, "Project.toml"))
     metal = TOML.parsefile(joinpath(root, "test", "metal", "Project.toml"))
     @test metal["deps"]["IMEXRungeKutta"] == project["uuid"]
-    @test sort(collect(keys(metal["deps"]))) == ["IMEXRungeKutta", "Metal", "Test"]
+    @test sort(collect(keys(metal["deps"]))) ==
+          ["IMEXRungeKutta", "Metal", "MultiFloats", "Test"]
     source = joinpath(root, "test", "metal", metal["sources"]["IMEXRungeKutta"]["path"])
     @test realpath(source) == realpath(root)
     @test isfile(joinpath(root, "test", "metal_tests.jl"))
