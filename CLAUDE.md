@@ -133,9 +133,9 @@ and "Validation".
 
 **The releases are tagged** (2026-09-26): `v1.0.0` (2026-09-24, Erik's
 decision; no 0.1.0 was ever tagged), `v1.1.0` (the explicit tableaus),
-`v1.2.0` (scratch reuse) and `v1.3.0` (MultiFloats, 2026-09-28, the
-first with a GitHub release), each at the commit that bumped
-`Project.toml`.
+`v1.2.0` (scratch reuse) and `v1.3.0` (MultiFloats, 2026-09-28), each
+at the commit that bumped `Project.toml`. Each has a GitHub release;
+those of the first three were created on 2026-09-28, from their tags.
 The package is not registered; tags and any registration are Erik's.
 Since 1.0.0 the interface in `CODE.md`, "The
 interface" and "The callback contracts", is the public API under semantic
