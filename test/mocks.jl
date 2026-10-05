@@ -4,7 +4,7 @@
 # in `CLAUDE.md`).
 
 using IMEXRungeKutta: IMEXRungeKutta
-using IMEXRungeKutta: Euler, RK4, SSPRK33
+using IMEXRungeKutta: Euler, RK4, SSPRK33, Butcher62, CooperVerner8, ImplicitEuler
 
 # One entry per callback call: which callback, its time, its array
 # argument (`u` for `f_exp!` and the limiters, `U` for `solve_imp!`), and
@@ -115,13 +115,25 @@ const CALL_COUNTS = [
     (make = ARS222, f_exp = 2, solve_imp = 2, stage_limiter = 1, scratch = 5),
     (make = ARS443, f_exp = 4, solve_imp = 4, stage_limiter = 3, scratch = 9),
 ]
-# The three purely explicit tableaus: no solve, and a trivial first stage
+# The five purely explicit tableaus: no solve, and a trivial first stage
 # that calls `f_exp!` on `integ.u` itself with no stage limiter. Explicit
 # Euler forms no stage value, so it has no `U` either.
 const EXPLICIT_CALL_COUNTS = [
     (make = Euler, f_exp = 1, solve_imp = 0, stage_limiter = 0, scratch = 1),
     (make = RK4, f_exp = 4, solve_imp = 0, stage_limiter = 3, scratch = 5),
     (make = SSPRK33, f_exp = 3, solve_imp = 0, stage_limiter = 2, scratch = 4),
+    (make = Butcher62, f_exp = 7, solve_imp = 0, stage_limiter = 6, scratch = 8),
+    (make = CooperVerner8, f_exp = 11, solve_imp = 0, stage_limiter = 10, scratch = 12),
 ]
-const ALL_CALL_COUNTS = [CALL_COUNTS; EXPLICIT_CALL_COUNTS]
+# The purely implicit tableau: one solve, from `u★ = uⁿ`, and no explicit
+# evaluation, so no stage limiter either; `U` and the increment.
+const IMPLICIT_CALL_COUNTS = [
+    (make = ImplicitEuler, f_exp = 0, solve_imp = 1, stage_limiter = 0, scratch = 2),
+]
+const ALL_CALL_COUNTS = [CALL_COUNTS; EXPLICIT_CALL_COUNTS; IMPLICIT_CALL_COUNTS]
+
+# The named tableaus whose first stage is trivial: no solve and an empty
+# row, so `f_exp!` reads `integ.u` itself there.
+const TRIVIAL_FIRST = ("ARS(2,2,2)", "ARS(4,4,3)", "Euler", "RK4", "SSPRK(3,3)",
+                       "Butcher62", "CooperVerner8")
 const NAMED_TABLEAUS = [spec.make for spec in ALL_CALL_COUNTS]

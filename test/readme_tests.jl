@@ -41,4 +41,9 @@ end
     explicit = Core.eval(m, :explicit)
     @test explicit.tableau.name == "RK4" && explicit.t === 1.0
     @test abs(explicit.u[1] - exp(-1.0) - 3.3e-7) < 0.05e-7
+    # The implicit example: backward Euler with no explicit part, and its
+    # stated error, `1.1⁻¹⁰ − e⁻¹`.
+    implicit = Core.eval(m, :implicit)
+    @test implicit.tableau.name == "ImplicitEuler" && implicit.t === 1.0
+    @test abs(implicit.u[1] - exp(-1.0) - 0.018) < 0.0005
 end

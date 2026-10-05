@@ -87,7 +87,8 @@ quasi-steady state `u ≈ ū + ε cos t`. SSP3(4,3,3), the intended
 production scheme, is not: in that limit its result is off it by `O(Δt)`,
 here by about `−0.28 Δt cos t` (see `CODE.md`, "Tableaus").
 
-A purely explicit tableau, `Euler()`, `RK4()` or `SSPRK33()`, makes no
+A purely explicit tableau, `Euler()`, `RK4()`, `SSPRK33()`, the
+sixth-order `Butcher62()` or the eighth-order `CooperVerner8()`, makes no
 stage solve, so the stage solver may be `nothing`:
 
 ```julia
@@ -101,12 +102,24 @@ Its first stage reads `uⁿ` itself, so only the step limiter limits it:
 pass a correction that must reach every right-hand-side input as both
 `stage_limiter` and `step_limiter` (`CODE.md`, "Explicit tableaus").
 
+The purely implicit `ImplicitEuler()`, backward Euler, makes no explicit
+evaluation, so the explicit part may be `nothing`:
+
+```julia
+# u′ = −u with backward Euler: one stage solve per step, U = u★/(1 + Δt).
+solve_decay!(U, u★, γΔt, p, t) = (U .= u★ ./ (1 + γΔt); nothing)
+implicit = solve(IMEXProblem(nothing, solve_decay!, [1.0], (0.0, 1.0)), ImplicitEuler();
+                 dt = 0.1)
+implicit.u[1] - exp(-1.0)       # ≈ 0.018, backward Euler's error at Δt = 0.1
+```
+
 ## Status
 
 **Version 1.3.0.** `IMEXProblem`, `init`, `step!`, `solve!` and `solve`,
-with the stage and step limiters, for all ten named tableaus
+with the stage and step limiters, for all thirteen named tableaus
 (`IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP2332`, `IMEXSSP3332`, `IMEXSSP3433`,
-`ARS222`, `ARS443`, and the explicit `Euler`, `RK4`, `SSPRK33`) and a
+`ARS222`, `ARS443`, the explicit `Euler`, `RK4`, `SSPRK33`, `Butcher62`,
+`CooperVerner8`, and the implicit `ImplicitEuler`) and a
 caller's own `IMEXTableau`. The stage arithmetic
 is one fused broadcast per combination by default, for any array type.
 For a CPU `Array` with threads, `init(...; partition = :even)`, or an explicit partition with one

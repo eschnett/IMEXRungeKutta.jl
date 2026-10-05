@@ -89,6 +89,13 @@ existed:
     problem, or a stiff one being debugged, runs through the same
     integrator, limiters and stage arithmetic, with no stage solver
     ([Explicit tableaus](#explicit-tableaus-decided-2026-09-25)).
+  - **Two high-order explicit tableaus and backward Euler** (added
+    2026-10-05, Erik's request): Butcher's (1964) seven-stage
+    sixth-order method and Cooper & Verner's (1972) eleven-stage
+    eighth-order method, as `Butcher62()` and `CooperVerner8()`, and the
+    purely implicit backward Euler, as `ImplicitEuler()`, for which
+    `f_exp!` may be `nothing` ([Implicit
+    Euler](#implicit-euler-decided-2026-10-05)).
 - **A stage limiter hook** and a step limiter hook. These are
   positivity- or atmosphere-type resets of the state, with the signature
   of the SSPRK methods of OrdinaryDiffEqSSPRK. What a stage limiter's
@@ -422,22 +429,63 @@ no copy and no stage limiter call ([One step](#one-step-decided)).
 - **`SSPRK33()`**, `"SSPRK(3,3)"`: Shu & Osher (1988), in Butcher form,
   `Ã = [0 0 0; 1 0 0; ¼ ¼ 0]`, `b̃ = (1/6, 1/6, 2/3)`. It is exactly the
   explicit part of SSP3(3,3,2), coefficient for coefficient (a test).
+- **`Butcher62()`**, `"Butcher62"` (added 2026-10-05): the second of
+  Butcher's (1964) seven-stage sixth-order methods, rational,
+  `c̃ = (0, ⅓, ⅔, ⅓, ½, ½, 1)`,
+  `b̃ = (11/120, 0, 27/40, 27/40, −4/15, −4/15, 11/120)`. Seven stages
+  are the fewest any sixth-order method has.
+- **`CooperVerner8()`**, `"CooperVerner8"` (added 2026-10-05): Cooper &
+  Verner (1972), eleven stages, eighth order, in closed form with `√21`
+  and so held as 256-bit `BigFloat`. Eleven stages are the fewest any
+  eighth-order method is known to have. Its nodes are 0, ½ and
+  `(7 ± √21)/14`, and `b̃` is the five-point Lobatto quadrature,
+  `(1/20, 49/180, 16/45, 49/180, 1/20)` on stages 1 and 8–11, zero on
+  stages 2–7.
 
-All three are rational and held exactly. Measured, as for the IMEX
+The first four are rational and held exactly. Measured, as for the IMEX
 tableaus (`test/tableau_tests.jl`, with the classical order conditions of
-`(Ã, b̃)` alone, since `b = 0` meets none on `b`):
+`(Ã, b̃)` alone, since `b = 0` meets none on `b`). The conditions are
+generated from the rooted trees, one per tree, all of them at every order:
+37 up to order 6, 200 up to order 8 (amended 2026-10-05; until then they
+were a hand-written list, complete to order 4). "Next order misses by" is
+the largest residual among the next order's conditions:
 
-| | Euler | RK4 | SSPRK(3,3) |
-|---|---|---|---|
-| order | 1 | 4 | 3 |
-| next order misses by | 0.5 | 1/120 (`b̃ᵀc̃⁴ = 1/5`) | 0.083 |
-| SSP coefficient | 1 | 0 | 1 |
-| `f_exp!` calls per step | 1 | 4 | 3 |
-| stage limiter calls per step | 0 | 3 | 2 |
-| scratch arrays | 1 | 5 | 4 |
+| | Euler | RK4 | SSPRK(3,3) | Butcher62 | CooperVerner8 |
+|---|---|---|---|---|---|
+| order | 1 | 4 | 3 | 6 | 8 |
+| conditions met | 1 | 8 | 4 | 37 | 200, to 2.1e−77 |
+| next order misses by | 1/2 | 1/80 (`[[τ]²]`) | 1/12 | 361/332640 (`[[[τ]]²]`) | 1/35280 (`[[τ⁷]]`) |
+| SSP coefficient | 1 | 0 | 1 | 0 | 0 |
+| `f_exp!` calls per step | 1 | 4 | 3 | 7 | 11 |
+| stage limiter calls per step | 0 | 3 | 2 | 6 | 10 |
+| scratch arrays | 1 | 5 | 4 | 8 | 12 |
+
+RK4's miss was recorded as 1/120, the bushy tree's `b̃ᵀc̃⁴ − 1/5`, while
+the list had only that condition at order 5; the largest of all nine is
+1/80 (amended 2026-10-05).
 
 A perturbation of any one explicit coefficient by 1e−3 breaks an order
-condition up to the stated order (a test). Explicit Euler forms no stage
+condition up to the stated order (a test), for Butcher62 and
+Cooper–Verner too.
+
+**No high-order method is SSP.** No explicit Runge–Kutta method of order
+above 4 has a positive SSP coefficient (Ruuth & Spiteri 2002), and
+Butcher62's and Cooper–Verner's are 0: their `b̃` has negative weights or
+their `Ã` negative entries. They are for smooth, non-stiff problems, and
+a stage limiter does not make them total-variation diminishing. On the
+linear advection of [SSP and total
+variation](#ssp-and-total-variation), their threshold is that of their
+stability polynomial (measured 2026-10-05).
+
+**Cross-checks** (2026-10-05). Both are in OrdinaryDiffEqExplicitTableaus
+2.0.0 (in OrdinaryDiffEq.jl's `lib/`), as `Butcher62`
+(`tableaus_order6.jl`) and `CooperVerner8` (`tableaus_order7.jl`), and
+agree coefficient for coefficient, read, not run: that package is not a
+test dependency. Its `Butcher6` is the first, irrational (`√5`), method of
+Butcher's paper, and its `CooperVerner82` the conjugate of ours,
+`√21 → −√21`, also of order 8; ours has the larger real stability
+interval there (4.14 against 3.72). The independent check is the 200
+order conditions. Explicit Euler forms no stage
 value, so it has no `U` either
 ([The stage plan and storage](#the-stage-plan-and-storage-decided)).
 
@@ -457,6 +505,43 @@ values](#tableaus-are-values-decided)): `Euler` and `RK4` are
 OrdinaryDiffEqLowOrderRK's and `SSPRK33` OrdinaryDiffEqSSPRK's, which the
 oracle compares them with ([The oracle](#the-oracle)). They clash with
 those exports as the IMEX names clash with OrdinaryDiffEqSDIRK's.
+`Butcher62` and `CooperVerner8` are OrdinaryDiffEqExplicitTableaus'
+names; `Butcher6` there is another method, so ours is not called that.
+
+**The order is measured in `BigFloat`.** Orders 6 and 8 reach `Float64`'s
+round-off within one or two halvings of `Δt`, so `test/order_tests.jl`
+runs the two in 256-bit `BigFloat`, state and time, on the same problems
+and steps as the others ([Observed orders](#observed-orders)). That
+needs no test dependency, and `cos` exists there, which MultiFloats'
+types lack.
+
+### Implicit Euler (decided 2026-10-05)
+
+The purely implicit counterpart of explicit Euler: backward Euler,
+`uⁿ⁺¹ = uⁿ + Δt g(uⁿ⁺¹, tⁿ⁺¹)`, as the additive method with `Ã = 0`,
+`b̃ = 0`, `A = [1]` and `b = [1]`, `"ImplicitEuler"`, rational and held
+exactly (Erik chose it over the IMEX forward–backward Euler,
+ARS(1,1,1), on 2026-10-05).
+
+- **One stage solve, and nothing else.** Its stage solves from
+  `u★ = uⁿ`, which is `integ.u` itself (an empty row), at `tⁿ + Δt` with
+  `γΔt = Δt`, and `uⁿ⁺¹ = uⁿ + d₁`, which is the solver's `U`. No stage
+  is explicit-used, so `f_exp!` and the stage limiter are never called;
+  the step limiter is, once per step. Scratch: `U` and `d₁`, 2 arrays.
+- **`f_exp!` may be `nothing`**, as `solve_imp!` may for an explicit
+  tableau ([The callback contracts](#the-callback-contracts-decided)).
+  `init` refuses `nothing` for a tableau that reads an explicit tendency,
+  saying how many explicit evaluations it makes. An `f_exp!` given with
+  `ImplicitEuler()` is never called.
+- **Measured** (`test/tableau_tests.jl`, with the classical order
+  conditions of `(A, b)` alone): order 1, missing `bᵀc = 1/2` by 1/2;
+  `R(z) = 1/(1 − z)`, A-stable with `R(∞) = 0`, so L-stable; stiffly
+  accurate. It is no IMEX method, so the IMEX order conditions, the SSP
+  coefficient of an explicit part and the stiff-limit tests of
+  [Validation](#validation-measured-in-step-3) do not apply to it.
+- **The name is OrdinaryDiffEqSDIRK's**, which the oracle compares it
+  with ([The oracle](#the-oracle)), and clashes with that export as the
+  IMEX names do.
 
 ### One step (decided)
 
@@ -783,6 +868,11 @@ What step 2 settled (proposed in step 2, decided 2026-09-24):
 
 - **`f_exp!(du, u, p, t)`** writes all of `du` and does not change `u`.
   At a trivial first stage, `u` is `integ.u` itself.
+  - **It may be `nothing`** for a tableau that reads no explicit
+    tendency, [`ImplicitEuler()`](#implicit-euler-decided-2026-10-05)
+    (amended 2026-10-05). `init` refuses `nothing` for any other, saying
+    how many explicit evaluations the tableau makes. An `f_exp!` given
+    with such a tableau is never called.
 - **`solve_imp!(U, u★, γΔt, p, t)`** writes `U` so that
   `U = u★ + γΔt g(U, t)`.
   - **It may be `nothing`** for a tableau that makes no stage solve, the
@@ -908,7 +998,9 @@ step limiter, `integ.u` is undefined.
 - **Named constructors** (decided): `IMEXSSP222()`, `IMEXSSP2322()`,
   `IMEXSSP2332()`, `IMEXSSP3332()`, `IMEXSSP3433()`, `ARS222()` and
   `ARS443()` (`IMEXSSP2332()` added in step 1), and the explicit
-  `Euler()`, `RK4()` and `SSPRK33()` (added 2026-09-25).
+  `Euler()`, `RK4()` and `SSPRK33()` (added 2026-09-25), `Butcher62()`
+  and `CooperVerner8()`, and the implicit `ImplicitEuler()` (added
+  2026-10-05).
   - These are OrdinaryDiffEq's names, so an oracle test reads as a
     comparison of like with like. `IMEXSSP2332` has no upstream
     counterpart; it follows the same rule.
@@ -1438,7 +1530,7 @@ What it says:
 
 - `src/IMEXRungeKutta.jl`: the module and its exports.
 - `src/tableau.jl`: `IMEXTableau`, its checks, and the conversion to `T`.
-- `src/tableaus.jl`: the ten tableaus, in closed form.
+- `src/tableaus.jl`: the thirteen tableaus, in closed form.
 - `src/plan.jl`: the stage plan.
 - `src/lincomb.jl`: fused linear combinations, broadcast and threaded.
 - `src/integrator.jl`: `IMEXProblem`, `init`, `step!` and `solve!`.
@@ -1665,6 +1757,14 @@ failure mode it guards.
     in any one coefficient fails one; the SSP coefficient, the patterns
     and the scratch count are as recorded; SSPRK(3,3) is SSP3(3,3,2)'s
     explicit part.
+  - also (added 2026-10-05): the classical conditions come from the
+    rooted trees, whose counts per order (1, 1, 2, 4, 9, 20, 48, 115,
+    286) are checked; Butcher62 and CooperVerner8 meet all 37 and 200,
+    and miss the next order by the recorded amount; Cooper–Verner's nodes
+    and Lobatto weights, and its independence of the global precision;
+    the new tableaus' converted coefficients are correctly rounded;
+    `ImplicitEuler` is backward Euler, first order, L-stable and stiffly
+    accurate, with no explicit stage.
 - **Mechanics:**
   - `step!` is allocation-free after warm-up;
   - `solve_imp!` is called once per implicit stage, with the documented
@@ -1679,6 +1779,11 @@ failure mode it guards.
     left it, unlimited by the stage limiter; an explicit tableau takes
     `solve_imp! = nothing` and never calls one given; `init` refuses
     `nothing` for a tableau that solves;
+  - also (added 2026-10-05): the mechanics run over Butcher62,
+    CooperVerner8 and ImplicitEuler too; `ImplicitEuler` takes
+    `f_exp! = nothing` and never calls an `f_exp!` or a stage limiter
+    given; `init` refuses `f_exp! = nothing` for a tableau that reads an
+    explicit tendency;
   - scratch filled with NaN before the first step leaves no NaN in the
     result, so no structural zero is read;
   - an exception thrown by `solve_imp!` leaves `integ.u` and `integ.t`
@@ -1772,7 +1877,8 @@ failure mode it guards.
   over ten steps, within the restrictions above. That is all but
   SSP2(3,3,2) (amended in step 1). The explicit three match
   OrdinaryDiffEqLowOrderRK's `Euler` and `RK4` and OrdinaryDiffEqSSPRK's
-  `SSPRK33` (added 2026-09-25).
+  `SSPRK33` (added 2026-09-25), and `ImplicitEuler` OrdinaryDiffEqSDIRK's
+  (added 2026-10-05). Butcher62 and CooperVerner8 have no oracle run.
   - Also (amended in step 3): with a `t`-dependent `f`, it matches
     where `c̃_s = 1` and is `@test_broken` where not (#4620); the
     14-digit SSP3(4,3,3) is compared on its own; and our ARS(4,4,3)
@@ -1844,6 +1950,20 @@ made explicit, `u′ = (i − 1)u` and `u′ = cos t − u`, and no stage solver
 | Euler | 1 | 1.009 | 1.002 |
 | RK4 | 4 | 4.011 | 4.004 |
 | SSPRK(3,3) | 3 | 3.011 | 3.006 |
+| Butcher62, `BigFloat` | 6 | 6.013 | 5.988 |
+| CooperVerner8, `BigFloat` | 8 | 8.012 | 8.006 |
+
+Butcher62 and CooperVerner8 run in 256-bit `BigFloat`, state and time,
+since in `Float64` their errors reach round-off within the step sizes
+(measured 2026-10-05; [Explicit
+tableaus](#explicit-tableaus-decided-2026-09-25)).
+
+`ImplicitEuler()` runs the same two problems all implicit, with
+`f_exp! = nothing` and the stage solves `U = u★/(1 − Δt(i − 1))` and
+`U = (u★ + Δt cos t)/(1 + Δt)` (measured 2026-10-05): order 0.991 and
+0.998, and on the second an error of 7.393e−4 at `Δt = 1/160`, asserted
+to 1%, since a solve at `tⁿ` rather than `tⁿ⁺¹` would still be first
+order.
 
 ### The stiff limit
 
@@ -1946,7 +2066,11 @@ largest over the steps and over both components; the order is fitted over
   it only (measured 2026-09-25): `C = 1.0000` for Euler, RK4 and
   SSPRK(3,3). For Euler and SSPRK(3,3) that is the SSP coefficient; RK4's
   is 0, but its polynomial `1 + z + z²/2 + z³/6 + z⁴/24` has the linear
-  threshold 1.
+  threshold 1. Butcher62 and CooperVerner8 (measured 2026-10-05): `C =
+  0.0524` and `0.2095`. Their polynomials end in `−(7/3) z⁷/7!` and
+  `−0.83 z¹¹/11!`, whose linear thresholds are only 8.0e−9 and 1.0e−6;
+  as for ARS(4,4,3), the bisected `C` is where the rise, of high order in
+  `C`, falls below the tolerance. They are not for discontinuities.
 - **With relaxation as fast as the advection** (`ε = 10⁻²`, `Δt/ε = C`),
   every `C` is below the explicit threshold.
 - **In the stiff limit** the non-stiffly-accurate three have `C = 0`: each
@@ -2005,6 +2129,13 @@ was 2.9.6 until 2026-10-05 (amended 2026-10-05).
   | Euler | 3.5e−17 | 9.4e−17 |
   | RK4 | 2.8e−17 | 3.8e−17 |
   | SSPRK(3,3) | 2.8e−17 | 1.2e−16 |
+- `ImplicitEuler()` against OrdinaryDiffEqSDIRK's `ImplicitEuler`, on the
+  same problem made wholly implicit, with `f_exp! = nothing` and the
+  stage solve `U = (I − Δt(L + M)) \ (u★ + Δt a cos(3t) v)`: 8.3e−17 for
+  `a = 0` and 9.7e−17 for `a = 1` (measured 2026-10-05, with 2.9.6).
+  Butcher62 and CooperVerner8 have no oracle run; they are checked
+  against OrdinaryDiffEqExplicitTableaus by reading
+  ([Explicit tableaus](#explicit-tableaus-decided-2026-09-25)).
 - `test/Project.toml` adds OrdinaryDiffEqSDIRK with the compat bound
   `"2.9.6"`, that is `[2.9.6, 3)` (proposed in step 3, decided
   2026-09-24). A release that fixes #4620 turns the two `@test_broken`

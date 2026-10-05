@@ -1,7 +1,7 @@
 using CommonSolve: CommonSolve
 using IMEXRungeKutta: IMEXRungeKutta, IMEXProblem, IMEXTableau
 using IMEXRungeKutta: IMEXSSP222, IMEXSSP3433, ARS222, ARS443
-using IMEXRungeKutta: Euler, RK4, SSPRK33
+using IMEXRungeKutta: Euler, RK4, SSPRK33, Butcher62, CooperVerner8, ImplicitEuler
 
 # "The interface" and "Time and the step count" in `CODE.md`.
 
@@ -226,6 +226,14 @@ end
     explicit = IMEXProblem(f_decay!, nothing, [1.0], (0.0, 1.0))
     @test occursin("makes 4 stage solves", msg(() -> init(explicit, IMEXSSP3433(); dt = 0.1)))
     @test occursin("makes 2 stage solves", msg(() -> init(explicit, ARS222(); dt = 0.1)))
+    # No `f_exp!` for a tableau that evaluates it ("Implicit Euler").
+    implicit = IMEXProblem(nothing, solve_decay_imp!, [1.0], (0.0, 1.0))
+    @test occursin("makes 3 explicit evaluations",
+                   msg(() -> init(implicit, IMEXSSP3433(); dt = 0.1)))
+    @test occursin("makes 4 explicit evaluations", msg(() -> init(implicit, RK4(); dt = 0.1)))
+    @test occursin("makes 1 stage solves",
+                   msg(() -> init(IMEXProblem(nothing, nothing, [1.0], (0.0, 1.0)),
+                                  ImplicitEuler(); dt = 0.1)))
 end
 
 # A purely explicit problem should not need a dummy stage solver; with
@@ -233,7 +241,7 @@ end
 # is given is never called ("Explicit tableaus" in `CODE.md`).
 never_called!(U, u★, γΔt, p, t) = error("solve_imp! called by an explicit tableau")
 @testset "An explicit tableau takes solve_imp! = nothing, and never calls one given" begin
-    for make in (Euler, RK4, SSPRK33)
+    for make in (Euler, RK4, SSPRK33, Butcher62, CooperVerner8)
         a = solve(IMEXProblem(f_decay!, nothing, [1.0], (0.0, 1.0)), make(); dt = 0.1)
         b = solve(IMEXProblem(f_decay!, never_called!, [1.0], (0.0, 1.0)), make(); dt = 0.1)
         @test a.u == b.u
@@ -241,6 +249,29 @@ never_called!(U, u★, γΔt, p, t) = error("solve_imp! called by an explicit ta
         integ = init(IMEXProblem(f_decay!, nothing, Float32[1], (0.0, 1.0)), make(); dt = 0.1)
         @test (@inferred step!(integ)) === nothing
     end
+end
+
+# A purely implicit problem should not need a dummy explicit part; with
+# `f_exp! = nothing` it is backward Euler, and an `f_exp!` that is given is
+# never called, nor is a stage limiter ("Implicit Euler" in `CODE.md`).
+never_called_f!(du, u, p, t) = error("f_exp! called by an implicit tableau")
+never_called_limiter!(u, integ, p, t) = error("stage limiter called by an implicit tableau")
+@testset "ImplicitEuler takes f_exp! = nothing, and never calls one given" begin
+    a = solve(IMEXProblem(nothing, solve_decay_imp!, [1.0], (0.0, 1.0)), ImplicitEuler();
+              dt = 0.1)
+    b = solve(IMEXProblem(never_called_f!, solve_decay_imp!, [1.0], (0.0, 1.0)),
+              ImplicitEuler(); dt = 0.1, stage_limiter = never_called_limiter!)
+    @test a.u == b.u
+    @test a.t === 1.0
+    # Ten steps of `uⁿ⁺¹ = uⁿ/(1 + Δt)`, exactly as the solver computes it.
+    u = 1.0
+    for _ in 1:10
+        u = u / (1 + 0.1)
+    end
+    @test a.u == [u]
+    integ = init(IMEXProblem(nothing, solve_decay_imp!, Float32[1], (0.0, 1.0)),
+                 ImplicitEuler(); dt = 0.1)
+    @test (@inferred step!(integ)) === nothing
 end
 
 # An export without a docstring, or one that does not point at the design

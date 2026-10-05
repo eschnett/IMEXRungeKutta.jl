@@ -1,5 +1,5 @@
-# The ten named tableaus, in closed form ("Tableaus" in `CODE.md`): seven
-# IMEX and, at the end, three purely explicit.
+# The thirteen named tableaus, in closed form ("Tableaus" in `CODE.md`):
+# seven IMEX, then five purely explicit, and at the end one purely implicit.
 #
 # They are functions, not constants, because a BigFloat does not survive
 # precompilation reliably. The irrational ones are computed inside
@@ -311,4 +311,106 @@ function SSPRK33()
                              1 0 0
                              1//4 1//4 0],
                             [1 // 6, 1 // 6, 2 // 3])
+end
+
+"""
+    Butcher62()
+
+The second of Butcher's (1964) seven-stage sixth-order methods, rational:
+`c̃ = (0, 1/3, 2/3, 1/3, 1/2, 1/2, 1)`,
+`b̃ = (11/120, 0, 27/40, 27/40, −4/15, −4/15, 11/120)`. Seven stages are
+the fewest any sixth-order explicit method has. `b̃` has negative weights,
+so its SSP coefficient is 0, as for every explicit method of order above 4
+(`CODE.md`, "Explicit tableaus"). The implicit part is zero, so
+`solve_imp!` is never called and may be `nothing`; its first stage reads
+`uⁿ` itself. OrdinaryDiffEqExplicitTableaus' name: its `Butcher6` is the
+first, irrational, method of the same paper.
+"""
+function Butcher62()
+    # Butcher (1964), J. Austral. Math. Soc. 4, 179–194, the second
+    # method; checked against OrdinaryDiffEqExplicitTableaus 2.0.0's
+    # `Butcher62` (`tableaus_order6.jl`), coefficient for coefficient.
+    return explicit_tableau("Butcher62",
+                            [0 0 0 0 0 0 0
+                             1//3 0 0 0 0 0 0
+                             0 2//3 0 0 0 0 0
+                             1//12 1//3 -1//12 0 0 0 0
+                             -1//16 9//8 -3//16 -3//8 0 0 0
+                             0 9//8 -3//8 -3//4 1//2 0 0
+                             9//44 -9//11 63//44 18//11 0 -16//11 0],
+                            [11 // 120, 0, 27 // 40, 27 // 40, -4 // 15, -4 // 15, 11 // 120])
+end
+
+"""
+    CooperVerner8()
+
+The eleven-stage eighth-order method of Cooper & Verner (1972), in closed
+form with `√21`. Eleven stages are the fewest any eighth-order explicit
+method is known to have. Its nodes include `(7 ± √21)/14`, and `b̃` is the
+five-point Lobatto quadrature, `(1/20, 49/180, 16/45, 49/180, 1/20)` on
+stages 1 and 8–11, zero on stages 2–7. Its SSP coefficient is 0. Returns
+an [`IMEXTableau`](@ref) of 256-bit `BigFloat`; the implicit part is
+zero, so `solve_imp!` is never called and may be `nothing`, and its first
+stage reads `uⁿ` itself (`CODE.md`, "Explicit tableaus").
+OrdinaryDiffEqExplicitTableaus' name; its `CooperVerner82` is the
+conjugate, `√21 → −√21`, also of order 8.
+"""
+function CooperVerner8()
+    # Cooper & Verner (1972), SIAM J. Numer. Anal. 9, 389–405; checked
+    # against OrdinaryDiffEqExplicitTableaus 2.0.0's `CooperVerner8`
+    # (`tableaus_order7.jl`), coefficient for coefficient, there written
+    # as `p + q·√21`.
+    return with_coefficient_precision() do
+        r = sqrt(BigFloat(21))
+        q(x) = BigFloat(x)
+        z = zero(BigFloat)
+        Ã = zeros(BigFloat, 11, 11)
+        Ã[2, 1] = q(1 // 2)
+        Ã[3, 1:2] = [q(1 // 4), q(1 // 4)]
+        Ã[4, 1:3] = [q(1 // 7), -q(1 // 14) + q(3 // 98) * r, q(3 // 7) - q(5 // 49) * r]
+        Ã[5, 1:4] = [q(11 // 84) - q(1 // 84) * r, z, q(2 // 7) - q(4 // 63) * r,
+                     q(1 // 12) + q(1 // 252) * r]
+        Ã[6, 1:5] = [q(5 // 48) - q(1 // 48) * r, z, q(1 // 4) - q(1 // 36) * r,
+                     -q(77 // 120) - q(7 // 180) * r, q(63 // 80) + q(7 // 80) * r]
+        Ã[7, 1:6] = [q(5 // 21) + q(1 // 42) * r, z, -q(48 // 35) - q(92 // 315) * r,
+                     q(211 // 30) + q(29 // 18) * r, -q(36 // 5) - q(23 // 14) * r,
+                     q(9 // 5) + q(13 // 35) * r]
+        Ã[8, 1:7] = [q(1 // 14), z, z, z, q(1 // 9) + q(1 // 42) * r,
+                     q(13 // 63) + q(1 // 21) * r, q(1 // 9)]
+        Ã[9, 1:8] = [q(1 // 32), z, z, z, q(91 // 576) + q(7 // 192) * r, q(11 // 72),
+                     -q(385 // 1152) + q(25 // 384) * r, q(63 // 128) - q(13 // 128) * r]
+        Ã[10, 1:9] = [q(1 // 14), z, z, z, q(1 // 9), -q(733 // 2205) + q(1 // 15) * r,
+                      q(515 // 504) - q(37 // 168) * r, -q(51 // 56) + q(11 // 56) * r,
+                      q(132 // 245) - q(4 // 35) * r]
+        Ã[11, 1:10] = [z, z, z, z, -q(7 // 3) - q(7 // 18) * r,
+                       -q(2 // 5) - q(28 // 45) * r, -q(91 // 24) + q(53 // 72) * r,
+                       q(301 // 72) - q(53 // 72) * r, q(28 // 45) + q(28 // 45) * r,
+                       q(49 // 18) + q(7 // 18) * r]
+        b̃ = [q(1 // 20), z, z, z, z, z, z, q(49 // 180), q(16 // 45), q(49 // 180),
+              q(1 // 20)]
+        return IMEXTableau{BigFloat}("CooperVerner8", Ã, b̃, zeros(BigFloat, 11, 11),
+                                     zeros(BigFloat, 11))
+    end
+end
+
+# The purely implicit tableau ("Implicit Euler" in `CODE.md`): the additive
+# method with a zero explicit part. No stage is explicit-used, so `f_exp!`
+# is never called and may be `nothing`.
+
+"""
+    ImplicitEuler()
+
+The implicit (backward) Euler method, `uⁿ⁺¹ = uⁿ + Δt g(uⁿ⁺¹, tⁿ⁺¹)`:
+one stage, `A = [1]`, `b = [1]`, first order, L-stable and stiffly
+accurate, with a zero explicit part. Its one stage solve is at `tⁿ + Δt`
+with `γΔt = Δt`, and `uⁿ⁺¹` is its `U`. The explicit part is zero, so
+`f_exp!` is never called and may be `nothing`, and no stage limiter is
+called; the step limiter is (`CODE.md`, "Implicit Euler").
+OrdinaryDiffEqSDIRK's name, as the other named tableaus are; it clashes
+with its `ImplicitEuler`.
+"""
+function ImplicitEuler()
+    q(x) = Rational{BigInt}(x)
+    return IMEXTableau{Rational{BigInt}}("ImplicitEuler", q.(fill(0, 1, 1)), q.([0]),
+                                         q.(fill(1, 1, 1)), q.([1]))
 end

@@ -35,9 +35,10 @@ differ in general: an explicit evaluation of stage `k` is at
 The coefficients are held exactly, as `R = Rational{BigInt}`, when every
 one given is an integer or a rational, and otherwise as 256-bit `BigFloat`.
 They are converted to the state's arithmetic type once, when an integrator
-is built. The ten named tableaus ([`IMEXSSP3433`](@ref), [`RK4`](@ref)
+is built. The thirteen named tableaus ([`IMEXSSP3433`](@ref), [`RK4`](@ref)
 and the others) go through this constructor, and so does a caller's own.
-A purely explicit one has `A = 0` and `b = 0`.
+A purely explicit one has `A = 0` and `b = 0`, and a purely implicit one
+`Ã = 0` and `b̃ = 0`.
 
 The constructor refuses, with an `ArgumentError` that says why:
 - parts that are not square and of one size `s ≥ 1`, or weights that are

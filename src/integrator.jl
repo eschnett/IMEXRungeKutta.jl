@@ -10,7 +10,9 @@ The problem `u′ = f(u, t) + g(u, t)` on `t0 ≤ t ≤ t1`, `u(t0) = u0`, with
 `g` itself is never given: the caller solves its stage equation.
 
 - `f_exp!(du, u, p, t)` writes all of `du = f(u, t)` and does not change
-  `u`.
+  `u`. It may be `nothing` for a tableau whose explicit part is never
+  read, such as [`ImplicitEuler`](@ref)`()`; `init` refuses `nothing` for
+  any other.
 - `solve_imp!(U, u★, γΔt, p, t)` writes `U` so that
   `U = u★ + γΔt g(U, t)`, by any means. `U` and `u★` are distinct arrays;
   on entry `U` holds a copy of `u★`, so the solver need only write the
@@ -217,8 +219,10 @@ Build an integrator for `prob` with the tableau `tab` (such as
   at `tⁿ⁺¹`; `integ.t` and `integ.nstep` advance after it returns. See
   `CODE.md`, "One step".
 - **`solve_imp! = nothing`** in `prob` is refused unless `tab` makes no
-  stage solve, as the explicit [`Euler`](@ref), [`RK4`](@ref) and
-  [`SSPRK33`](@ref) do.
+  stage solve, as the explicit [`Euler`](@ref), [`RK4`](@ref),
+  [`SSPRK33`](@ref), [`Butcher62`](@ref) and [`CooperVerner8`](@ref) do.
+- **`f_exp! = nothing`** in `prob` is refused unless `tab` reads no
+  explicit tendency, as the implicit [`ImplicitEuler`](@ref) does.
 - **`alias_u0 = true`** makes `integ.u` be `u0` itself, which saves one
   state-sized array; by default `u0` is copied.
 - **`partition`** chooses the stage arithmetic. `nothing`, the default,
@@ -295,6 +299,12 @@ function CommonSolve.init(prob::IMEXProblem, tab::IMEXTableau; dt,
                              $(tab.name) makes $nsolves stage solves per step, and \
                              the integrator never evaluates g itself; nothing is only \
                              for a purely explicit tableau such as RK4()"))
+    nexplicit = count(explicit_used(tab))
+    (nexplicit == 0 || prob.f_exp! !== nothing) ||
+        throw(ArgumentError("init: the problem's f_exp! is nothing, but the tableau \
+                             $(tab.name) makes $nexplicit explicit evaluations per \
+                             step; nothing is only for a purely implicit tableau such \
+                             as ImplicitEuler()"))
     part = resolve_partition(u0, partition)
     u = alias_u0 ? u0 : copy_initial(u0, part)
     reused = resolve_reuse(reuse, tab, u0, u, part)
