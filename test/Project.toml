@@ -11,5 +11,5 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 [compat]
 MultiFloats = "3.3.2"
 OrdinaryDiffEqLowOrderRK = "2.2.5"
-OrdinaryDiffEqSDIRK = "2.9.6"
+OrdinaryDiffEqSDIRK = "2.9.7"
 OrdinaryDiffEqSSPRK = "2.3.2"

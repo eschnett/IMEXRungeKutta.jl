@@ -20,9 +20,13 @@ Symmetry run, as he asked
 ([By owner, as built](#by-owner-as-built-measured-in-step-5)).
 Open or pending:
 - where the partition for TreeAMR state vectors comes from (open;
-  [Stage arithmetic](#stage-arithmetic-decided));
-- SciML/OrdinaryDiffEq.jl#4620 upstream, until whose fix two oracle
-  comparisons are `@test_broken` ([The oracle](#the-oracle)).
+  [Stage arithmetic](#stage-arithmetic-decided)).
+
+SciML/OrdinaryDiffEq.jl#4620, which kept two oracle comparisons
+`@test_broken`, is fixed in OrdinaryDiffEqSDIRK 2.9.7, which also gives
+`ARS443` the paper's `b̃`; the oracle is bounded below by it, and every
+comparison is a plain test ([The oracle](#the-oracle)) (amended
+2026-10-05).
 
 ## Purpose
 
@@ -327,7 +331,10 @@ exception. Two coefficients escape the order conditions alone:
 **Cross-checks** (measured in step 1). Each tableau was compared, by
 reading only, with OrdinaryDiffEqSDIRK 2.9.6
 (`src/imex_tableaus.jl`) and ClimaTimeSteppers (`main`,
-`src/solvers/imex_tableaus.jl`, fetched 2026-09-24).
+`src/solvers/imex_tableaus.jl`, fetched 2026-09-24). OrdinaryDiffEqSDIRK
+2.9.7's `imex_tableaus.jl` differs from 2.9.6's only in `ARS443`'s `b̃`,
+now the paper's, so every tableau upstream has agrees with it
+(amended 2026-10-05).
 - The ARS schemes were also checked against the paper itself, from
   Erik's copy.
 - The five Pareschi–Russo schemes were checked against the paper itself
@@ -371,24 +378,29 @@ reading only, with OrdinaryDiffEqSDIRK 2.9.6
   - Here `b̃` is the paper's (decided: Erik checked the paper, and so did
     step 1).
   - OrdinaryDiffEqSDIRK 2.9.6's `ARS443` has
-    `b̃ = b = (0, 3/2, −3/2, 1/2, 1/2)`, which is not the paper's. It is
+    `b̃ = b = (0, 3/2, −3/2, 1/2, 1/2)`, which is not the paper's
+    (2.9.7 has the paper's, and agrees with `ARS443()` to 2.8e−16 over
+    the oracle's ten steps, amended 2026-10-05). It is
     also third order, exactly, and misses the classical order-4
     conditions by up to 0.076 (a test). But it reads the explicit
     tendency of stage 5, so it makes five explicit evaluations per step,
     not four.
   - Erik reported it upstream, to SciML/OrdinaryDiffEq.jl, on
     2026-09-24 (amended 2026-09-24).
-  - Step 3's oracle comparison of ARS(4,4,3) must therefore compare with
+  - Step 3's oracle comparison of ARS(4,4,3) therefore compared with
     `IMEXTableau("…", Ã, b, A, b)`, built from `ARS443()`'s parts, not
-    with `ARS443()`.
+    with `ARS443()`. Against 2.9.7 it compares with `ARS443()` itself,
+    and the `b̃ = b` variant remains as a third-order method of its own,
+    named for 2.9.6, in the `O(Δt⁴)` comparison below and the stiff-limit
+    table (amended 2026-10-05).
   - What the difference amounts to (measured in step 3). On the oracle's
     linear problem the two differ by 1.95e−5 in one step of `Δt = 0.1`
     and by 5.2e−10 at `Δt = 0.00625`, `O(Δt⁴)` per step (local slopes
     3.59, 3.78, 3.89, 3.94), and by 2.5e−5 over ten steps of `Δt = 0.1`.
-    In the stiff limit the difference is qualitative: upstream's explicit
-    part is not stiffly accurate, so its step lands `O(Δt⁴)` off the
-    equilibrium. On the Kaps problem at `ε = 10⁻¹²`, one step of
-    `Δt = 0.1` leaves `y₁ − y₂² = 6.46e−5` with upstream's `b̃`, and
+    In the stiff limit the difference is qualitative: the variant's
+    explicit part is not stiffly accurate, so its step lands `O(Δt⁴)` off
+    the equilibrium. On the Kaps problem at `ε = 10⁻¹²`, one step of
+    `Δt = 0.1` leaves `y₁ − y₂² = 6.46e−5` with 2.9.6's `b̃`, and
     4.2e−14 (0.04ε) with the paper's. A reviewer's reproducer, on a
     problem not recorded here, measured −2.3e−5 against 1.6e−8 at
     `Δt = 0.1`, `ε = 10⁻¹⁰`.
@@ -1474,9 +1486,10 @@ What it says:
     OrdinaryDiffEqLowOrderRK, OrdinaryDiffEqSDIRK, OrdinaryDiffEqSSPRK,
     TOML and Test. TOML is there for the project-file checks, and the
     three OrdinaryDiffEq packages for the oracles, with the `[compat]`
-    bounds `"2.2.5"`, `"2.9.6"` and `"2.3.2"`, the versions the suite
+    bounds `"2.2.5"`, `"2.9.7"` and `"2.3.2"`, the versions the suite
     ran against ([The oracle](#the-oracle); the two explicit ones added
-    2026-09-25). CommonSolve is there because
+    2026-09-25; OrdinaryDiffEqSDIRK's raised from `"2.9.6"`
+    (amended 2026-10-05)). CommonSolve is there because
     the tests load it by name, which a dependency of the package alone
     does not allow (measured in step 6: without it, `scaffold_tests.jl`
     fails with "Package CommonSolve not found"). Its bound is the root
@@ -1542,6 +1555,9 @@ does not.
 
 ### OrdinaryDiffEq (OrdinaryDiffEqSDIRK 2.9.6)
 
+Surveyed at 2.9.6. 2.9.7 changes only the mistimed last explicit stage
+and `ARS443`'s `b̃`, both below (amended 2026-10-05).
+
 It has had `IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP3332`, `IMEXSSP3433`,
 `ARS222`, `ARS232` and `ARS443` since mid-2026
 (SciML/OrdinaryDiffEq.jl#3704, #3705), on `SplitODEProblem`, with
@@ -1566,7 +1582,9 @@ Julia 1.10 compat. Measured:
 - **Mistimed last explicit stage.** It is evaluated at `t + Δt` instead
   of `t + c̃_s Δt`. As a result, IMEXSSP3332 and IMEXSSP3433 are only
   first order when `f` depends on `t` (1.01 instead of 2 and 3). The fix
-  is one line. Reported as SciML/OrdinaryDiffEq.jl#4620 (2026-09-24).
+  is one line. Reported as SciML/OrdinaryDiffEq.jl#4620 (2026-09-24), and
+  fixed in OrdinaryDiffEqSDIRK 2.9.7, which evaluates it at
+  `t + c̃_s Δt` (amended 2026-10-05).
 - A heavy dependency tree (about 180 packages, with ForwardDiff,
   LinearSolve and NonlinearSolve), and serial stage arithmetic.
 
@@ -1582,16 +1600,18 @@ reference step to 1e−16 on a linear problem with default settings. These
 restrictions apply:
 - the state must be real (its default AD Jacobian rejects a complex
   state);
-- `f` must not depend on `t`, until #4620 is fixed. That holds only for
+- until 2.9.7, `f` must not depend on `t` (#4620). That held only for
   the tableaus whose last explicit abscissa `c̃_s` is not 1, SSP3(3,3,2)
   and SSP3(4,3,3) (`c̃_s = 1/2`), since upstream's `t + Δt` is right where
-  `c̃_s = 1` (amended in step 3). With a `t`-dependent `f`, the other four
-  agree with upstream to 3.1e−16 over ten steps, and those two differ by
-  0.0225;
-- its `ARS443` has `b̃ = b`, where this package has the last row of `Ã`
-  (amended in step 1; see "Cross-checks" under [Tableaus](#tableaus)). So
-  the comparison for ARS(4,4,3) is against a tableau built with upstream's
-  `b̃`;
+  `c̃_s = 1` (amended in step 3). With a `t`-dependent `f`, 2.9.6 agreed
+  with the other four to 3.1e−16 over ten steps, and differed from those
+  two by 0.0225. 2.9.7 agrees with all six to 4.5e−16, and the bound
+  `"2.9.7"` lifts the restriction (amended 2026-10-05);
+- until 2.9.7, its `ARS443` had `b̃ = b`, where this package has the last
+  row of `Ã` (amended in step 1; see "Cross-checks" under
+  [Tableaus](#tableaus)), so the comparison for ARS(4,4,3) was against a
+  tableau built with that `b̃`. 2.9.7 has the paper's, and is compared
+  with `ARS443()` (amended 2026-10-05);
 - SSP2(3,3,2) is in neither upstream, so it has no oracle (amended in
   step 1). Its coefficients are checked against the paper, Table 4 of
   arXiv:1009.2757 (amended 2026-09-24), and step 3's measurements agree
@@ -1638,7 +1658,8 @@ failure mode it guards.
     - the tableaus and their converted coefficients do not depend on the
       global `BigFloat` precision;
     - the 14 printed digits of SSP3(4,3,3) are the closed form rounded;
-    - upstream's ARS(4,4,3) variant is third order too.
+    - the ARS(4,4,3) variant with `b̃ = b`, OrdinaryDiffEqSDIRK 2.9.6's,
+      is third order too.
   - also (added 2026-09-25) for the explicit tableaus: each meets the
     classical conditions of its order exactly and misses the next; a slip
     in any one coefficient fails one; the SSP coefficient, the patterns
@@ -1756,6 +1777,10 @@ failure mode it guards.
     where `c̃_s = 1` and is `@test_broken` where not (#4620); the
     14-digit SSP3(4,3,3) is compared on its own; and our ARS(4,4,3)
     differs from upstream's by `O(Δt⁴)` per step.
+  - Against 2.9.7 (amended 2026-10-05): with a `t`-dependent `f`, every
+    tableau matches, `c̃_s ≠ 1` included; ARS(4,4,3) is compared with `ARS443()`;
+    and the paper's ARS(4,4,3) differs from 2.9.6's `b̃ = b` variant by
+    `O(Δt⁴)` per step.
 - **A PDE** (amended 2026-09-24, after the plan): the Jin–Xin relaxation
   of 2D Burgers' equation, `examples/jin_xin_2d.jl`,
   `u_t + v_x + w_y = 0`, `v_t + a²u_x = −(v − u²/2)/ε`,
@@ -1880,7 +1905,7 @@ largest over the steps and over both components; the order is fitted over
 | SSP3(4,3,3) | −0.28436465 | — | −0.28436465 | — | −7.1610e−3 | 1.962 |
 | ARS(2,2,2) | 0 (`w = 0`) | 0 | 1.0ε/Δt | 0 | 9.4e−14 (0.094ε) | — |
 | ARS(4,4,3) | 0 (`w = 0`) | 0 | 1.0ε/Δt | 0 | 4.2e−14 (0.042ε) | — |
-| ARS(4,4,3), upstream's `b̃` | — | — | — | — | 6.4568e−5 | 3.974 |
+| ARS(4,4,3), 2.9.6's `b̃ = b` | — | — | — | — | 6.4568e−5 | 3.974 |
 
 - The Kaps residuals are asserted to 1% and their orders, over
   `Δt = 0.1, 0.05, 0.025, 0.0125`, to ±0.15 of 2, 2, 2, 3, 2 and 4. For
@@ -1945,22 +1970,31 @@ overshoot, `κ Δt |f|` with `|f| ~ jump/Δx`, next to each jump of it.
 
 `test/oracle_tests.jl`: `SplitODEProblem(g, f, …)` with upstream's
 defaults, ten steps of `Δt = 0.1` of `u′ = Lu + Mu + a cos(3t) v` on three
-real components, `Lu` implicit. Upstream is OrdinaryDiffEqSDIRK 2.9.6.
+real components, `Lu` implicit. Upstream is OrdinaryDiffEqSDIRK 2.9.7, and
+was 2.9.6 until 2026-10-05 (amended 2026-10-05).
 
 | | `c̃_s` | `a = 0` | `a = 1` |
 |---|---|---|---|
 | SSP2(2,2,2) | 1 | 5.6e−17 | 1.4e−16 |
 | SSP2(3,2,2) | 1 | 2.5e−16 | 2.6e−16 |
-| SSP3(3,3,2) | 1/2 | 1.4e−16 | 0.0225 (#4620, `@test_broken`) |
-| SSP3(4,3,3) | 1/2 | 5.3e−16 | 0.0225 (#4620, `@test_broken`) |
+| SSP3(3,3,2) | 1/2 | 1.4e−16 | 6.9e−17 |
+| SSP3(4,3,3) | 1/2 | 5.3e−16 | 4.5e−16 |
 | ARS(2,2,2) | 1 | 2.8e−17 | 1.4e−16 |
-| ARS(4,4,3), upstream's `b̃` | 1 | 8.3e−17 | 3.1e−16 |
+| ARS(4,4,3) | 1 | 2.8e−16 | 6.6e−17 |
+
+- Against 2.9.6 the `a = 1` column was 0.0225 for SSP3(3,3,2) and
+  SSP3(4,3,3), the mistimed last explicit stage of #4620, and those two
+  were `@test_broken`. Its ARS(4,4,3) was the `b̃ = b` variant, which
+  agreed with a tableau built that way to 8.3e−17 and 3.1e−16, and
+  differs from 2.9.7's, and from ours, by 2.5e−5 at `a = 0` and 2.5e−4 at
+  `a = 1`.
 
 - The 1e−12 tolerance absorbs upstream's 14-digit SSP3(4,3,3): ten steps
   with the printed digits, held exactly as decimals, differ from the
   closed form by 4.9e−16, and from upstream by 1.9e−16.
-- Our own ARS(4,4,3), the paper's, differs from upstream's by 2.5e−5 over
-  the ten steps ("Cross-checks").
+- The paper's ARS(4,4,3) differs from 2.9.6's `b̃ = b` variant by
+  2.5e−5 over the ten steps, `O(Δt⁴)` per step, a test of its own that
+  needs no upstream ("Cross-checks").
 - The explicit tableaus against OrdinaryDiffEqLowOrderRK 2.2.5's `Euler`
   and `RK4` and OrdinaryDiffEqSSPRK 2.3.2's `SSPRK33`, on the same problem
   made wholly explicit, `u′ = (L + M)u + a cos(3t) v`, with
@@ -1975,6 +2009,10 @@ real components, `Lu` implicit. Upstream is OrdinaryDiffEqSDIRK 2.9.6.
   `"2.9.6"`, that is `[2.9.6, 3)` (proposed in step 3, decided
   2026-09-24). A release that fixes #4620 turns the two `@test_broken`
   into unexpected passes, which fail the suite, and so is noticed.
+  2.9.7 did, and changed `ARS443`'s `b̃` too: a fresh `Pkg.test()`
+  resolved it on 2026-10-05 and `oracle_tests.jl` failed. The bound is
+  now `"2.9.7"`, that is `[2.9.7, 3)`, and every comparison above is a
+  plain `@test d < 1e-12` (amended 2026-10-05).
 
 ## On a device (measured in step 4)
 
@@ -2148,7 +2186,8 @@ Deferred:
   towards a more realistic modelling of relativistic astrophysical
   plasmas*, MNRAS 394 (2009) 1727–1740 — IMEX-SSP for resistive MHD.
 - SciML/OrdinaryDiffEq.jl#2065 (the IMEX-SSP request), #3704, #3705
-  (the tableaus), #4620 (the abscissa bug).
+  (the tableaus), #4620 (the abscissa bug, fixed in OrdinaryDiffEqSDIRK
+  2.9.7).
 - ClimaTimeSteppers.jl, `src/solvers/imex_ssprk.jl` and
   `src/solvers/imex_ark.jl`.
 

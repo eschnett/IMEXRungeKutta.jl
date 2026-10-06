@@ -44,14 +44,16 @@ ClimaTimeSteppers, the package design as built and measured, the tests
 and the open questions. Erik decided every proposal the steps made on
 2026-09-24, the last (fresh tasks rather than persistent workers) through
 the Symmetry run he asked for. Open or pending:
-- where a TreeAMR state vector's ownership partition comes from (open);
-- #4620 upstream ("Repository facts").
+- where a TreeAMR state vector's ownership partition comes from (open).
+
+#4620 is fixed upstream, in OrdinaryDiffEqSDIRK 2.9.7, the oracle's
+floor since 2026-10-05 ("Repository facts").
 
 What exists:
 - `Project.toml` with CommonSolve as the one run-time dependency, and
   `test/Project.toml`, the test environment: CommonSolve, LinearAlgebra,
   MultiFloats (compat `3.3.2`), OrdinaryDiffEqLowOrderRK (compat
-  `2.2.5`), OrdinaryDiffEqSDIRK (compat `2.9.6`) and OrdinaryDiffEqSSPRK
+  `2.2.5`), OrdinaryDiffEqSDIRK (compat `2.9.7`) and OrdinaryDiffEqSSPRK
   (compat `2.3.2`), the oracles, TOML and Test;
 - `src/IMEXRungeKutta.jl`, the module, which re-exports CommonSolve's
   `init`, `solve`, `solve!` and `step!` and exports `IMEXProblem`,
@@ -85,8 +87,9 @@ What exists:
   `test/mechanics_tests.jl`, `test/smoke_order_tests.jl` and
   `test/readme_tests.jl` (which runs the README's example);
 - the validation of step 3: `test/problems.jl` (test-only helpers: the
-  fitted order and the Kaps problem), `test/order_tests.jl`,
-  `test/stiff_tests.jl` (Kaps), `test/ap_tests.jl` (the stiff limit),
+  fitted order, the Kaps problem and `ARS443_2_9_6`),
+  `test/order_tests.jl`, `test/stiff_tests.jl` (Kaps), `test/ap_tests.jl`
+  (the stiff limit),
   `test/ssp_tests.jl` (total variation) and `test/oracle_tests.jl`
   (OrdinaryDiffEqSDIRK); the numbers are in `CODE.md`, "Validation";
 - the device smoke run of step 4: `test/metal_tests.jl`, gated by
@@ -334,9 +337,10 @@ implementation plan. The why is in `CODE.md`.
   - Upstream's state must be real.
   - Upstream's SSP3(4,3,3) uses the 14-digit coefficients, which differ
     from the closed form by about 1e−15.
-  - Upstream's `ARS443` has `b̃ = b`, not the last row of `Ã`. Compare
-    ARS(4,4,3) with `IMEXTableau("…", Ã, b, A, b)`, built from
-    `ARS443()`'s parts.
+  - Upstream's `ARS443` had `b̃ = b`, not the last row of `Ã`, until
+    2.9.6; 2.9.7 has the paper's and is compared with `ARS443()`. The
+    `b̃ = b` variant (`ARS443_2_9_6` in the tests) is still a third-order
+    method of its own, in the `O(Δt⁴)` test and the stiff-limit table.
   - #4620 is under "Repository facts".
 - **MultiFloats converts only through `BigFloat`** (`CODE.md`,
   "Software floats"). A double-float has no `Int`, `Float64`, `round(Int,
@@ -371,9 +375,10 @@ implementation plan. The why is in `CODE.md`.
     and `generic_imex_perform_step.jl` in SciML/OrdinaryDiffEq.jl;
   - ClimaTimeSteppers: `src/solvers/imex_ssprk.jl`, `imex_ark.jl` and
     `imex_tableaus.jl` in CliMA/ClimaTimeSteppers.jl.
-- OrdinaryDiffEqSDIRK #4620 (the mistimed last explicit stage) was open
-  on 2026-09-24. Until it is fixed, oracle comparisons of the tableaus
-  with `c̃_s ≠ 1`, SSP3(3,3,2) and SSP3(4,3,3), must use an explicit part
-  that does not depend on `t`; `test/oracle_tests.jl` marks theirs
-  `@test_broken`. A fix upstream makes them unexpected passes, which fail
-  the suite: then turn them into plain `@test`s.
+- OrdinaryDiffEqSDIRK #4620 (the mistimed last explicit stage), open on
+  2026-09-24, is fixed in 2.9.7, which a fresh `Pkg.test()` resolved on
+  2026-10-05. The two `@test_broken`s of `test/oracle_tests.jl` became
+  unexpected passes, as intended, and are plain `@test`s now, every
+  tableau compared with a `t`-dependent explicit part too; the compat
+  floor is `2.9.7`. A later upstream change to the tableaus or the stage
+  times shows the same way, as a failure there.

@@ -52,10 +52,6 @@ function ap_displacement(f!, tab, t0, t1, dt, ε; u0 = AP_ū)
     return integ.u[1] - AP_ū
 end
 
-const ARS443_UPSTREAM = let t = ARS443()
-    IMEXTableau("ARS(4,4,3), upstream's b̃ = b", t.Ã, t.b, t.A, t.b)
-end
-
 # Per tableau, `wᵀ𝟙` and, where it is exact, `wᵀc̃`, as recorded in
 # `CODE.md`: `wᵀ𝟙` is −1/√2 for SSP2(2,2,2) and SSP3(3,3,2), and
 # −0.28436465 for SSP3(4,3,3) (256-bit values rounded to 8 digits).
@@ -177,9 +173,10 @@ const KAPS_AP_TABLE = [
     (make = IMEXSSP3433, r = -7.1610e-3, order = 2),
     (make = ARS222, r = 0.0, order = nothing),
     (make = ARS443, r = 0.0, order = nothing),
-    # Upstream's ARS(4,4,3), with `b̃ = b`: its explicit part is no longer
-    # stiffly accurate, and it lands O(Δt⁴) off the manifold.
-    (make = () -> ARS443_UPSTREAM, r = 6.4568e-5, order = 4),
+    # ARS(4,4,3) with `b̃ = b`, OrdinaryDiffEqSDIRK's until 2.9.6: its
+    # explicit part is no longer stiffly accurate, and it lands O(Δt⁴) off
+    # the manifold.
+    (make = () -> ARS443_2_9_6, r = 6.4568e-5, order = 4),
 ]
 
 # A tableau or stage-contract change that moved a step off the manifold,

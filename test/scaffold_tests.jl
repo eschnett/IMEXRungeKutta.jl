@@ -73,7 +73,7 @@ end
     test_deps = ["CommonSolve", "LinearAlgebra", "MultiFloats", "OrdinaryDiffEqLowOrderRK",
                  "OrdinaryDiffEqSDIRK", "OrdinaryDiffEqSSPRK", "TOML", "Test"]
     oracle_compat = Dict("MultiFloats" => "3.3.2", "OrdinaryDiffEqLowOrderRK" => "2.2.5",
-                         "OrdinaryDiffEqSDIRK" => "2.9.6", "OrdinaryDiffEqSSPRK" => "2.3.2")
+                         "OrdinaryDiffEqSDIRK" => "2.9.7", "OrdinaryDiffEqSSPRK" => "2.3.2")
     root = pkgdir(IMEXRungeKutta)
     test_project = TOML.parsefile(joinpath(root, "test", "Project.toml"))
     @test sort(collect(keys(test_project["deps"]))) == test_deps
