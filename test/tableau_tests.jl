@@ -354,23 +354,6 @@ end
     @test 1e-13 < abs(R_infinity(printed)) < 1e-12
 end
 
-# OrdinaryDiffEqSDIRK's ARS443 had b̃ = b until 2.9.6, where the paper
-# (§2.8, p. 160), ClimaTimeSteppers and OrdinaryDiffEqSDIRK 2.9.7 have
-# b̃ = the last row of Ã. The oracle tests' O(Δt⁴) comparison of the two,
-# and the stiff-limit record of the variant, depend on knowing that both
-# are third order and that the variant evaluates the explicit part at
-# stage 5 as well.
-@testset "The ARS(4,4,3) variant with b̃ = b (OrdinaryDiffEqSDIRK ≤ 2.9.6) is a different third-order method" begin
-    tab = ARS443()
-    variant = IMEXTableau("ARS(4,4,3), b̃ = b", tab.Ã, tab.b, tab.A, tab.b)
-    @test variant.b̃ != tab.b̃
-    for p in 1:3
-        @test failing_conditions(variant, p, 0) == String[]
-    end
-    @test max_residual(variant, 4) > 1e-3
-    @test IMEXRungeKutta.explicit_used(variant) == Bool[1, 1, 1, 1, 1]
-end
-
 # The order conditions are the independent check of every transcription,
 # so a slip in any one coefficient must break one of them, or `R(∞) = 0`,
 # or be refused by the constructor. The sweep finds the coefficients for

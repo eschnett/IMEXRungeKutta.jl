@@ -173,10 +173,6 @@ const KAPS_AP_TABLE = [
     (make = IMEXSSP3433, r = -7.1610e-3, order = 2),
     (make = ARS222, r = 0.0, order = nothing),
     (make = ARS443, r = 0.0, order = nothing),
-    # ARS(4,4,3) with `b̃ = b`, OrdinaryDiffEqSDIRK's until 2.9.6: its
-    # explicit part is no longer stiffly accurate, and it lands O(Δt⁴) off
-    # the manifold.
-    (make = () -> ARS443_2_9_6, r = 6.4568e-5, order = 4),
 ]
 
 # A tableau or stage-contract change that moved a step off the manifold,

@@ -20,10 +20,10 @@ using LinearAlgebra: I, mul!
 #
 # The restrictions (`CODE.md`):
 # - the state is real (upstream's AD Jacobian rejects a complex one);
-# - SSP2(3,3,2) is in neither upstream, and has no oracle.
-# Until OrdinaryDiffEqSDIRK 2.9.7 there were two more: the last explicit
-# stage at `t + Δt` (SciML/OrdinaryDiffEq.jl#4620), and an `ARS443` with
-# `b̃ = b`. 2.9.7 fixed both, and is the floor of the bound.
+# - SSP2(3,3,2) is in neither upstream, and has no oracle;
+# - OrdinaryDiffEqSDIRK 2.9.7 or later: earlier releases evaluate the last
+#   explicit stage at `t + Δt` (SciML/OrdinaryDiffEq.jl#4620) and have
+#   another `b̃` for `ARS443`.
 
 const ORACLE_L = [-2.0 0.5 0.0; 0.3 -1.5 0.2; 0.0 0.4 -3.0]
 const ORACLE_M = [0.0 1.0 -0.5; -1.0 0.0 0.3; 0.5 -0.3 0.0]
@@ -114,20 +114,6 @@ end
     d = maximum(abs, our_run(IMEXSSP3433(), AUTONOMOUS) - our_run(SSP3433_PRINTED, AUTONOMOUS))
     @test d < 1e-14
     @test oracle_difference(ODE.IMEXSSP3433(), SSP3433_PRINTED, AUTONOMOUS) < 1e-12
-end
-
-# The paper's ARS(4,4,3) and 2.9.6's variant with `b̃ = b` ("Cross-checks"
-# in `CODE.md`) are both third order, so they differ by O(Δt⁴) per step: a
-# change that made the difference O(Δt³) would be a wrong tableau. No
-# upstream release is needed for this. Measured: 1.95e−5 in one step of
-# Δt = 0.1, and 5.2e−10 at Δt = 0.00625, with local slopes 3.59, 3.78,
-# 3.89 and 3.94 between; 2.5e−5 over ten steps of Δt = 0.1.
-@testset "The paper's ARS(4,4,3) differs from 2.9.6's b̃ = b variant by O(Δt⁴) per step" begin
-    one_step(tab, dt) = our_run(tab, AUTONOMOUS; dt, n = 1)
-    dts = (0.025, 0.0125, 0.00625)
-    diffs = [maximum(abs, one_step(ARS443(), dt) - one_step(ARS443_2_9_6, dt))
-             for dt in dts]
-    @test abs(fitted_order(dts, diffs) - 4) < 0.15
 end
 
 # The purely explicit tableaus against OrdinaryDiffEqLowOrderRK's `Euler`

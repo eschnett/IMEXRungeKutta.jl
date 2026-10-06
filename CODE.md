@@ -1,20 +1,16 @@
 # IMEXRungeKutta design
 
 This is the design document: what the package is, how it is built, and
-why. It describes the current state, in the present tense. Where the
-implementation shows it wrong or incomplete, fix it to describe the
-current state, and record in [`HISTORY.md`](HISTORY.md) what changed,
-when and why. Only what is not settled is marked, as **(open)** or
-**(proposed)**; everything else is the current design.
+why, as it is now. Where the implementation shows it wrong or incomplete,
+fix it; record a decision, with who took it, when and why, in
+[`HISTORY.md`](HISTORY.md). Only what is not settled is marked, as
+**(open)** or **(proposed)**.
 
-**Status:** the implementation plan is complete, and the
-[package design](#package-design) below is built, validated
+**Status:** the design below is built, validated
 ([Validation](#validation)), run on a device
 ([On a device](#on-a-device)) and threaded by owner
-([By owner, as built](#by-owner-as-built)); how it got there is in
-[`HISTORY.md`](HISTORY.md). Open:
-- where the partition for TreeAMR state vectors comes from (open;
-  [Stage arithmetic](#stage-arithmetic)).
+([By owner, as built](#by-owner-as-built)). Nothing in it is open;
+[Open questions](#open-questions) lists what is deferred.
 
 ## Contents
 
@@ -40,7 +36,7 @@ when and why. Only what is not settled is marked, as **(open)** or
   - [File layout](#file-layout)
   - [Documentation](#documentation)
 - [Why not an existing package](#why-not-an-existing-package)
-  - [OrdinaryDiffEq (OrdinaryDiffEqSDIRK 2.9.6)](#ordinarydiffeq-ordinarydiffeqsdirk-296)
+  - [OrdinaryDiffEq (OrdinaryDiffEqSDIRK 2.9.7)](#ordinarydiffeq-ordinarydiffeqsdirk-297)
   - [ClimaTimeSteppers (1.0.1)](#climatimesteppers-101)
 - [Testing](#testing)
 - [Validation](#validation)
@@ -55,15 +51,18 @@ when and why. Only what is not settled is marked, as **(open)** or
 
 ## Purpose
 
-Fixed-step **additive implicit–explicit Runge–Kutta** (IMEX RK) time
-integration for method-of-lines PDE systems
+Fixed-step Runge–Kutta time integration for method-of-lines PDE systems
 
     u′ = f(u, t) + g(u, t)
 
 where `f` is non-stiff and treated explicitly, and `g` is stiff and
-treated implicitly. The distinguishing feature: **the user solves the
-implicit stage equation**, by whatever means suits the problem. The
-integrator never evaluates `g` and never forms a Jacobian.
+treated implicitly. The core is **additive implicit–explicit (IMEX)
+Runge–Kutta**. Purely explicit methods (`g = 0`) and backward Euler
+(`f = 0`) run through the same integrator, so that a non-stiff problem,
+or a stiff one being debugged, has the same interface, limiters and stage
+arithmetic. The distinguishing feature: **the user solves the implicit
+stage equation**, by whatever means suits the problem. The integrator
+never evaluates `g` and never forms a Jacobian.
 
 The target problems are hyperbolic systems with stiff **local**
 relaxation, where `g` couples only the variables within one grid cell:
@@ -80,6 +79,10 @@ cannot be written as "evaluate `g`, then Newton on the whole vector"
 without losing robustness. A generic Newton–Krylov loop over the whole
 state is exactly what this package avoids.
 
+It was written for TreeGRRMHD.jl (resistive GRMHD on an adaptive mesh);
+TreeHydro.jl and TreeGeneralizedHarmonic.jl use it too. Nothing here
+depends on any of them.
+
 ## Requirements
 
 These are fixed by the use case:
@@ -89,30 +92,28 @@ These are fixed by the use case:
   [Why not an existing package](#why-not-an-existing-package)).
 - **The user stage solver.** Per implicit stage, the integrator calls
   `solve_imp!(U, u★, γΔt, p, t)`. That call must return `U` satisfying
-  `U = u★ + γΔt g(U, t)`, computed by any means. The integrator recovers
-  the implicit tendency as `k = (U − u★)/(γΔt)`. So no separate
-  evaluation of `g` exists or is needed.
-- **The tableaus**, seven of them: SSP2(2,2,2), SSP2(3,2,2) and
-  SSP2(3,3,2), SSP3(3,3,2) and SSP3(4,3,3) (Pareschi & Russo 2005), and
-  ARS(2,2,2) and ARS(4,4,3) (Ascher, Ruuth & Spiteri 1997). SSP3(4,3,3)
-  is the intended production scheme, and SSP2(2,2,2) the debugging one.
-  - `IMEXSSP2322` is SSP2(3,2,2), by the SSPk(s,σ,p) naming rule in
-    [Tableaus are values](#tableaus-are-values). Both
-    upstreams implement it under that name (OrdinaryDiffEqSDIRK's
-    `IMEXSSP2322`, ClimaTimeSteppers' `SSP322`).
-  - `IMEXSSP2332` is SSP2(3,3,2). It is in neither upstream.
-  - **Three purely explicit tableaus**: explicit Euler, for debugging,
-    classical RK4 and Shu &
-    Osher's SSPRK(3,3), as `Euler()`, `RK4()` and `SSPRK33()`. They are
-    the additive method with a zero implicit part, so that a non-stiff
-    problem, or a stiff one being debugged, runs through the same
-    integrator, limiters and stage arithmetic, with no stage solver
-    ([Explicit tableaus](#explicit-tableaus)).
-  - **Two high-order explicit tableaus and backward Euler**: Butcher's
-    (1964) seven-stage
-    sixth-order method and Cooper & Verner's (1972) eleven-stage
-    eighth-order method, as `Butcher62()` and `CooperVerner8()`, and the
-    purely implicit backward Euler, as `ImplicitEuler()`, for which
+  `U = u★ + γΔt g(U, t)`, computed by any means. The implicit tendency
+  is then `(U − u★)/(γΔt)`; the integrator works with the increment
+  `U − u★` itself ([One step](#one-step)). So no separate evaluation of
+  `g` exists or is needed.
+- **The tableaus**, thirteen of them:
+  - seven additive IMEX tableaus: SSP2(2,2,2), SSP2(3,2,2), SSP2(3,3,2),
+    SSP3(3,3,2) and SSP3(4,3,3) (Pareschi & Russo 2005), and ARS(2,2,2)
+    and ARS(4,4,3) (Ascher, Ruuth & Spiteri 1997) ([Tableaus](#tableaus)).
+    SSP3(4,3,3) is the intended production scheme, and SSP2(2,2,2) the
+    debugging one. `IMEXSSP2322` is SSP2(3,2,2) and `IMEXSSP2332` is
+    SSP2(3,3,2), by the SSPk(s,σ,p) naming rule in
+    [Tableaus are values](#tableaus-are-values). Both upstreams implement
+    SSP2(3,2,2) under that name (OrdinaryDiffEqSDIRK's `IMEXSSP2322`,
+    ClimaTimeSteppers' `SSP322`); SSP2(3,3,2) is in neither;
+  - five purely explicit tableaus, the additive method with a zero
+    implicit part and no stage solver: explicit Euler, for debugging,
+    classical RK4, Shu & Osher's SSPRK(3,3), Butcher's (1964)
+    seven-stage sixth-order method and Cooper & Verner's (1972)
+    eleven-stage eighth-order method, as `Euler()`, `RK4()`,
+    `SSPRK33()`, `Butcher62()` and `CooperVerner8()`
+    ([Explicit tableaus](#explicit-tableaus));
+  - the purely implicit backward Euler, as `ImplicitEuler()`, for which
     `f_exp!` may be `nothing` ([Implicit Euler](#implicit-euler)).
 - **A stage limiter hook** and a step limiter hook. These are
   positivity- or atmosphere-type resets of the state, with the signature
@@ -137,18 +138,12 @@ These are fixed by the use case:
     software types that convert only to and from `BigFloat`, with no
     `Int`, `Float64` or `cos`. See [Time and the step
     count](#time-and-the-step-count) and [On a device](#on-a-device).
-- **Minimal dependencies.** Only CommonSolve at run time. See
-  [Dependencies and names](#dependencies-and-names). It brings
-  PrecompileTools and Preferences with it. Heavier
-  packages (OrdinaryDiffEqSDIRK) are test-only, in `test/Project.toml`
-  ([File layout](#file-layout)). With it and the explicit
-  tableaus' oracles, OrdinaryDiffEqLowOrderRK and OrdinaryDiffEqSSPRK,
-  which add only themselves, the
-  test environment has 144 packages on Julia 1.13 and 140 on 1.10,
-  standard libraries included.
-  MultiFloats, for the double-float tests, is test-only too; with it the
-  test environment has 148 packages on 1.13, and the Metal environment,
-  which also has it, 103 on 1.13 and 101 on 1.10.
+- **Minimal dependencies.** Only CommonSolve at run time, which brings
+  PrecompileTools and Preferences with it
+  ([Dependencies and names](#dependencies-and-names)). The oracles
+  (OrdinaryDiffEqSDIRK, OrdinaryDiffEqLowOrderRK, OrdinaryDiffEqSSPRK)
+  and MultiFloats are test-only, in `test/Project.toml`
+  ([File layout](#file-layout)).
 
 ## The method
 
@@ -227,33 +222,25 @@ L-stable. That is computed, not quoted: all three
 nonzero coefficients of its E-polynomial are positive (below).
 Everything else is computed, not quoted.
 
-**Where a step ends in the stiff limit.** For a
-relaxation `g = −(u − ū)/ε` with `ε → 0`, each stage solve puts its `U`
-on the equilibrium, but the update of a tableau whose implicit part is
-not stiffly accurate need not. With every `a_kk ≠ 0` and `R(∞) = 0`, the
-update is `uⁿ⁺¹ = ū + Δt (b̃ᵀ − bᵀA⁻¹Ã) F`, where `F` is the vector of
-the stages' explicit tendencies. For an `f` that depends on `t` alone,
-this is `Δt (1 − bᵀA⁻¹c̃) f` to leading order.
-- `1 − bᵀA⁻¹c̃` is −0.2844 for SSP3(4,3,3), and −0.7071 for SSP2(2,2,2)
-  and SSP3(3,3,2).
-- It is 0 for the four schemes with a stiffly accurate implicit part:
-  SSP2(3,2,2), SSP2(3,3,2) and the two ARS (for ARS, on stages 2–s).
-- On the README's problem, `u′ = cos t − (u − ū)/ε` with `ε = 10⁻⁶` and
-  `Δt = 0.01`, SSP3(4,3,3) ends each step `−0.286 Δt cos t` off the
-  quasi-steady state `ū + ε cos t`. That is a displacement of 1.5e−3,
-  2858 times `ε cos t` and of the other sign. ARS(4,4,3) ends on it to
-  within 0.4% of `ε cos t`.
-- The displacement does not accumulate, since every step starts by
-  relaxing again.
-
-Measured per tableau, the second item is incomplete
-([Asymptotic preservation](#asymptotic-preservation)):
-- **The general form.** With `S` the solving stages (all of them for
-  IMEX-SSP, stages 2–s for ARS), `b_SᵀA_SS⁻¹𝟙 = 1` for all seven, and the
-  update is `ū + Δt wᵀF` with `w = b̃ − Ã_{S,:}ᵀA_SS⁻ᵀb_S`. For an `f` of
-  `t` alone that is `Δt (wᵀ𝟙) f + Δt² (wᵀc̃) f′ + …`, and
-  `wᵀ𝟙 = 1 − bᵀA⁻¹c̃`. Every step of every tableau lands on it, to at most
-  5.83ε at `ε = 10⁻¹²`, whatever `Δt`.
+**Where a step ends in the stiff limit.** For a relaxation
+`g = −(u − ū)/ε` with `ε → 0`, each stage solve puts its `U` on the
+equilibrium, but the update need not. With `S` the solving stages (all of
+them for IMEX-SSP, stages 2–s for ARS), `b_SᵀA_SS⁻¹𝟙 = 1` for all seven
+IMEX tableaus, and the update is `uⁿ⁺¹ = ū + Δt wᵀF` with
+`w = b̃ − Ã_{S,:}ᵀA_SS⁻ᵀb_S`, where `F` is the vector of the stages'
+explicit tendencies. For an `f` of `t` alone that is
+`Δt (wᵀ𝟙) f + Δt² (wᵀc̃) f′ + …`, with `wᵀ𝟙 = 1 − bᵀA⁻¹c̃`. Every step
+of every tableau lands on it, to at most 5.83ε at `ε = 10⁻¹²`, whatever
+`Δt` ([Asymptotic preservation](#asymptotic-preservation)).
+- **An implicit part that is not stiffly accurate leaves an `O(Δt)`
+  displacement.** `wᵀ𝟙` is −0.28436465 for SSP3(4,3,3) (256 bits,
+  rounded), exactly what a constant `f` gives, `d/Δt = −0.28436465`, and
+  `−1/√2` for SSP2(2,2,2) and SSP3(3,3,2). On the README's problem,
+  `u′ = cos t − (u − ū)/ε` with `ε = 10⁻⁶` and `Δt = 0.01`, SSP3(4,3,3)
+  ends each step `−0.286 Δt cos t` off the quasi-steady state
+  `ū + ε cos t`. That is a displacement of 1.5e−3, 2858 times `ε cos t`
+  and of the other sign. ARS(4,4,3) ends on it to within 0.4% of
+  `ε cos t`.
 - **`wᵀ𝟙 = 0` is not `w = 0`.** For SSP2(3,2,2) and SSP2(3,3,2) the
   implicit part is stiffly accurate but the explicit part is not, so
   `w = b̃ − ã_s ≠ 0`, with `wᵀc̃ = 1/2` and `1/4`. With an `f` that depends
@@ -263,14 +250,12 @@ Measured per tableau, the second item is incomplete
   land on `ū + ε f` to within 2ε.
 - **Only the ARS schemes have `w = 0`**, both parts being stiffly
   accurate, and land on the equilibrium to `O(ε)` whatever `f` is.
-- **SSP3(4,3,3)'s coefficient is `wᵀ𝟙` = −0.28436465** (256 bits,
-  rounded), exactly what a constant `f` gives, `d/Δt = −0.28436465`; for
-  SSP2(2,2,2) and SSP3(3,3,2) it is `−1/√2`.
-- **No accumulation, measured.** After 100 steps of `Δt = 0.01`, the
-  displacement at `t = 1` is the last step's limit displacement to 5.1ε
-  at `ε = 10⁻¹²`, for every tableau. At the README's `ε = 10⁻⁶` it is the
-  displacement of one step from the quasi-steady state at `t = 0.99` to
-  within 6.8e−4 relative.
+- **The displacement does not accumulate**, since every step starts by
+  relaxing again. After 100 steps of `Δt = 0.01`, the displacement at
+  `t = 1` is the last step's limit displacement to 5.1ε at `ε = 10⁻¹²`,
+  for every tableau. At the README's `ε = 10⁻⁶` it is the displacement of
+  one step from the quasi-steady state at `t = 0.99` to within 6.8e−4
+  relative.
 
 **Measured properties.** These are computed by
 `test/tableau_properties.jl` and asserted by `test/tableau_tests.jl`:
@@ -325,7 +310,8 @@ the others.
 The explicit parts of the IMEX-SSP schemes are Heun's method and the
 three-stage SSPRK(3,3) of Shu & Osher, with SSP coefficient 1, and for
 SSP2(3,3,2) the three-stage second-order SSPRK(3,2), with coefficient 2.
-Each is the optimal value for its stages and order. The ARS explicit parts have negative coefficients, and so
+Each is the optimal value for its stages and order. The ARS explicit parts
+have negative coefficients, and so
 coefficient 0: `δ = −1/√2` in ARS(2,2,2), and `ã₄₂ = −5/6` and
 `ã₅₄ = b̃₄ = −7/4` in ARS(4,4,3).
 What that means for TVD advection
@@ -346,12 +332,10 @@ exception. Two coefficients escape the order conditions alone:
   Stiff accuracy makes `R(∞) = 0` whatever it is. It is asserted
   directly, as the common diagonal 1/2 that both upstreams have.
 
-**Cross-checks.** Each tableau was compared, by
-reading only, with OrdinaryDiffEqSDIRK 2.9.6
-(`src/imex_tableaus.jl`) and ClimaTimeSteppers (`main`,
-`src/solvers/imex_tableaus.jl`, fetched 2026-09-24). OrdinaryDiffEqSDIRK
-2.9.7's `imex_tableaus.jl` differs from 2.9.6's only in `ARS443`'s `b̃`,
-now the paper's, so every tableau upstream has agrees with it.
+**Cross-checks.** Each tableau was compared, by reading only, with
+OrdinaryDiffEqSDIRK 2.9.7 (`src/imex_tableaus.jl`) and ClimaTimeSteppers
+(`main`, `src/solvers/imex_tableaus.jl`, fetched 2026-09-24). Every
+tableau either has agrees with it.
 - The ARS schemes were also checked against the paper itself, from
   Erik's copy.
 - The five Pareschi–Russo schemes were checked against the paper itself:
@@ -367,12 +351,10 @@ now the paper's, so every tableau upstream has agrees with it.
   ARS(2,2,2) agree with both, coefficient for coefficient. ARS(2,2,2)
   also agrees with ARS (1997) §2.6, p. 158: `γ = (2 − √2)/2`,
   `δ = 1 − 1/(2γ)`, explicit weights `(δ, 1 − δ, 0)`.
-- SSP2(3,3,2) is in neither upstream.
-  - Its coefficients are checked against the paper: they
-    are Table 4 of arXiv:1009.2757 exactly.
+- SSP2(3,3,2) is in neither upstream, so it has no oracle.
+  - Its coefficients are Table 4 of arXiv:1009.2757 exactly.
   - The order conditions give order 2, `bᵀAc − 1/6 = 1/24` at order 3,
     `R(∞) = 0` and SSP coefficient 2.
-  - It has no oracle.
   - The measurements of [Validation](#validation) agree: the
     observed order is 2.003 on `u′ = iu − u` and 2.001 on
     `u′ = −u + cos t`; on the Kaps problem it is second order at every
@@ -383,38 +365,12 @@ now the paper's, so every tableau upstream has agrees with it.
     integrated scheme, where the order conditions test the coefficients.
 - SSP3(4,3,3) (`SSP433`) agrees with both, up to their 14-digit
   `α, β, η`, which are the closed form rounded (a test).
-- **ARS(4,4,3) disagrees in `b̃`.**
-  - ARS (1997) §2.8, p. 160, prints the explicit tableau with last row
-    `(1/4, 7/4, 3/4, −7/4, 0)` and a weight row `b̃` identical to it. It
-    prints the implicit last row and `b` both as
-    `(0, 3/2, −3/2, 1/2, 1/2)`.
-  - So the explicit part is stiffly accurate, and it uses four stages,
-    the "4 explicit stages" of the name. ClimaTimeSteppers agrees.
-  - Here `b̃` is the paper's.
-  - OrdinaryDiffEqSDIRK 2.9.6's `ARS443` has
-    `b̃ = b = (0, 3/2, −3/2, 1/2, 1/2)`, which is not the paper's
-    (2.9.7 has the paper's, and agrees with `ARS443()` to 2.8e−16 over
-    the oracle's ten steps). It is
-    also third order, exactly, and misses the classical order-4
-    conditions by up to 0.076 (a test). But it reads the explicit
-    tendency of stage 5, so it makes five explicit evaluations per step,
-    not four.
-  - The oracle compares with `ARS443()` itself, against 2.9.7,
-    and the `b̃ = b` variant remains as a third-order method of its own,
-    named for 2.9.6, in the `O(Δt⁴)` comparison below and the stiff-limit
-    table ([HISTORY.md](HISTORY.md#tableaus) has how it was found and
-    reported).
-  - What the difference amounts to. On the oracle's
-    linear problem the two differ by 1.95e−5 in one step of `Δt = 0.1`
-    and by 5.2e−10 at `Δt = 0.00625`, `O(Δt⁴)` per step (local slopes
-    3.59, 3.78, 3.89, 3.94), and by 2.5e−5 over ten steps of `Δt = 0.1`.
-    In the stiff limit the difference is qualitative: the variant's
-    explicit part is not stiffly accurate, so its step lands `O(Δt⁴)` off
-    the equilibrium. On the Kaps problem at `ε = 10⁻¹²`, one step of
-    `Δt = 0.1` leaves `y₁ − y₂² = 6.46e−5` with 2.9.6's `b̃`, and
-    4.2e−14 (0.04ε) with the paper's. A reviewer's reproducer, on a
-    problem not recorded here, measured −2.3e−5 against 1.6e−8 at
-    `Δt = 0.1`, `ε = 10⁻¹⁰`.
+- **ARS(4,4,3)'s `b̃`.** ARS (1997) §2.8, p. 160, prints the explicit
+  tableau with last row `(1/4, 7/4, 3/4, −7/4, 0)` and a weight row `b̃`
+  identical to it. It prints the implicit last row and `b` both as
+  `(0, 3/2, −3/2, 1/2, 1/2)`. So both parts are stiffly accurate, and the
+  explicit part uses four stages, the "4 explicit stages" of the name.
+  ClimaTimeSteppers and OrdinaryDiffEqSDIRK 2.9.7 agree.
 
 ### Explicit tableaus
 
@@ -753,8 +709,9 @@ is the place ([Open questions](#open-questions)).
 
 ## Package design
 
-The first caller is TreeGRRMHD, whose `CODE.md`
-("Time integration") and `PLAN.md` (steps 4a–4c) say what it needs:
+What the callers need, as TreeGRRMHD's `CODE.md` ("Time integration")
+and `PLAN.md` (steps 4a–4c) state it, and as TreeHydro and
+TreeGeneralizedHarmonic use it:
 - one integrator over TreeAMR's flat multi-set state vector, on CPU
   threads or on a device;
 - a chunked driver with a fixed `Δt` per chunk and a fresh integrator
@@ -765,7 +722,7 @@ The first caller is TreeGRRMHD, whose `CODE.md`
   `gh_stage_limit!(u, p, t)`), and TreeHydro's take OrdinaryDiffEq's
   `(u, integrator, p, t)`;
 - stage arithmetic that keeps each block on the thread that owns it, as
-  TreeAMR now does (branch `claude/festive-bun-656842`, 2026-09-23).
+  TreeAMR does.
 
 ### Dependencies and names
 
@@ -774,20 +731,17 @@ The package depends on **CommonSolve.jl** only, and adds methods to its
 re-export these same functions, so this package can be loaded beside them
 without a name clash. StaticArrays is not needed.
 
-**CommonSolve's own dependencies.** Up to 0.2.13 it has none. From
-0.2.14 it depends on PrecompileTools, which
-depends on Preferences (and the TOML standard library). Both are small
-and are already in almost every Julia environment. PrecompileTools
-1.3 requires Julia 1.12, so on 1.10 the resolver picks 1.2.1; the suite
-passes with both. The requirement stands: one direct dependency.
+**CommonSolve's own dependencies.** From 0.2.14, the compat floor,
+CommonSolve depends on PrecompileTools, which depends on Preferences (and
+the TOML standard library). Both are small and are already in almost
+every Julia environment. PrecompileTools 1.3 requires Julia 1.12, so on
+1.10 the resolver picks 1.2.1; the suite passes with both. The
+requirement stands: one direct dependency.
 
-**The compat bound** is
-`CommonSolve = "0.2.14"`, that is `[0.2.14, 0.3)`: the current 0.2 series,
-from the one version the suite has run against. A cap below 0.2.14 would
-avoid the two transitive packages, but it would hold every environment
-that loads this package back from CommonSolve's later releases. SciMLBase
-3.56 bounds CommonSolve by `0.2.4 - 0.2`, so either choice resolves beside
-it.
+**The compat bound** is `CommonSolve = "0.2.14"`, that is
+`[0.2.14, 0.3)`: the current 0.2 series, from the one version the suite
+has run against. SciMLBase 3.56 bounds CommonSolve by `0.2.4 - 0.2`, so this
+package resolves beside it.
 
 The alternatives, not taken:
 - **Own the names.** They clash with DifferentialEquations when both are
@@ -826,8 +780,6 @@ The alternatives, not taken:
   carries over from one step to the next: no first-same-as-last stage and
   no cached tendency. So an atmosphere reset or a diagnostic fix-up in
   the driver is always safe.
-
-In detail:
 - **The integrator type** is `IMEXIntegrator`, a mutable struct, not
   exported. Every field but `t` and `nstep` is `const`, so `integ.u = v`
   is an error rather than a silent rebinding that the stage plan, which
@@ -999,16 +951,15 @@ step limiter, `integ.u` is undefined.
     counterpart; it follows the same rule.
   - `IMEXSSPksσp` is Pareschi–Russo's SSPk(s,σ,p). The short
     `IMEXSSP222` is SSP2(2,2,2).
-  - They clash with OrdinaryDiffEqSDIRK's exports, and the explicit three
-    with OrdinaryDiffEqLowOrderRK's and OrdinaryDiffEqSSPRK's, so the
-    tests `import` those and qualify their names.
+  - They clash with OrdinaryDiffEqSDIRK's exports, and `Euler`, `RK4`
+    and `SSPRK33` with OrdinaryDiffEqLowOrderRK's and
+    OrdinaryDiffEqSSPRK's, so the tests `import` those and qualify their
+    names.
   - They are functions returning an `IMEXTableau`, not constants,
     because a `BigFloat` does not survive precompilation reliably.
 - **A caller's own tableau** goes through the same constructor.
 - **Properties are computed in the tests.** The order conditions,
   L-stability and the SSP coefficient are not package API.
-
-In detail:
 - **The fields** are `name`, `Ã`, `b̃`, `A`, `b`, `c̃` and `c`.
   - The names are Pareschi–Russo's and ARS's, `"SSP3(4,3,3)"` and
     `"ARS(4,4,3)"`.
@@ -1069,12 +1020,9 @@ nonzero pattern. `init` is therefore type-unstable, once, behind a
 function barrier. `step!` is type-stable and, on the broadcast path,
 allocation-free, and it is unrolled over the stages. By owner it allocates
 a bound independent of the state size, and nothing at one thread
-([By owner, as built](#by-owner-as-built)). Measured: `@inferred step!`
-holds, and
-a step allocates 0 bytes for every tableau, with `Float64`, `Float32` and
-`ComplexF64` states. On an Apple M3 at one thread, with trivial callbacks,
-an SSP3(4,3,3) step on 10⁶ `Float64` entries takes 6.1 ms. It makes 53
-state-sized reads and writes, so that is about 70 GB/s.
+([By owner, as built](#by-owner-as-built)). Both are tests, for every
+tableau, with `Float64`, `Float32` and `ComplexF64` states. What a step
+costs is measured in [By owner, as built](#by-owner-as-built).
 
 A **structural zero is never read**. The array for a skipped tendency is
 not allocated, so no coefficient multiplies it, and `0·NaN` cannot occur
@@ -1105,7 +1053,7 @@ from it, and `d_k = U − uⁿ`. Forming `u★` in `d_k` first would cost one
 more state pass per step, for every IMEX-SSP scheme's stage 1. Hence
 "a nonempty row" in the last item of the scratch count.
 
-In detail:
+**The plan in detail:**
 - **The plan's layout.** A `Stage{Solves,ExplicitUsed,ImplicitUsed}` per
   stage holds its terms, where `u★` is formed, the stage value `U` that
   `f_exp!` reads (`integ.u` itself at a trivial stage), the `d_k` and
@@ -1212,12 +1160,12 @@ is limited by memory bandwidth. TreeWave measured it as 79% of a
 64-thread RK4 step, flat at 1.0× at every thread count.
 
 **Where the data lives matters as much as how many threads touch it.**
-TreeAMR measured this on a 64-core EPYC 7543 (2026-09-23; `CODE.md`,
-"What one process loses", on branch `claude/festive-bun-656842`):
+TreeAMR measured this on a 64-core EPYC 7543 (its `CODE.md`,
+"What one process loses"):
 - A block's data streams up to 2.7× faster when the core that last
   touched it touches it again.
 - Launching each phase on whichever thread was free cost the RHS 2.4×.
-- TreeAMR now runs every per-block pass on the block's owner. Block `b`
+- TreeAMR runs every per-block pass on the block's owner. Block `b`
   belongs to thread `c` if chunk `c` of `threadchunks(nblocks)` contains
   it. Chunk `c` runs as a sticky task placed on default-pool thread `c`
   (`jl_set_task_tid`), which also nests inside other parallel loops.
@@ -1258,12 +1206,12 @@ per stage. So there are two paths:
 element is computed alone, with its terms summed in a fixed order, so
 broadcast and every partition give the same bits. This is a test.
 
-**Where the partition comes from** (open). TreeGRRMHD needs a TreeAMR
-function that returns, for a tuple of field sets, the per-thread index
-ranges into their state vector. It is the same ownership rule
-`launch_by_owner!` already uses. Until TreeAMR has it, the caller builds
-the ranges from `threadchunks(nblocks)` and the set layout. This is a
-request to add to TreeGRRMHD's upstream list, not a dependency here.
+**Where the partition comes from.** The caller builds it: only the
+caller knows which thread owns which entries. For a TreeAMR state vector
+that is the ownership rule `launch_by_owner!` uses, thread `c` owning the
+entries of the blocks in chunk `c` of `threadchunks(nblocks)`, in every
+field set's segment. TreeAMR's `test/imex_tests.jl` builds it as
+`state_partition`, and TreeGeneralizedHarmonic builds its own.
 - A helper that knows nothing of TreeAMR: the internal, unexported
   `block_partition(blocks, segments)`. `blocks[c]` is the range of block
   numbers thread `c` owns, one per thread, as `threadchunks(nblocks)`
@@ -1272,9 +1220,7 @@ request to add to TreeGRRMHD's upstream list, not a dependency here.
   blocks. Thread `c` then owns one range per segment. A TreeAMR state
   vector is such a layout, one segment per field set with
   `blocklength = N^D · nvars`, if its sets are concatenated; the caller
-  asserts that, not this package. The question stays open: the helper is
-  not exported until TreeAMR's own function exists or Erik decides to
-  export it.
+  asserts that, not this package.
 
 **Rejected:**
 - **Polyester** (`RK4(thread = True())`). TreeWave measured it as worse,
@@ -1408,9 +1354,9 @@ together, at four threads on 1.13):
 - the terms reversed: 179 failures;
 - a `muladd` fold: 185;
 - a `@fastmath` fold: 185;
-- `U` not written in the fused pass: 78. It passed at first, since the
-  bitwise tests' solver writes all of `U`; the mock that checks `U = u★`
-  on entry, and a solver that writes half of `U`, were added for it;
+- `U` not written in the fused pass: 78, caught by the mock that checks
+  `U = u★` on entry and by a solver that writes half of `U`; the bitwise
+  tests' solver writes all of `U`, and alone would miss it;
 - the thread ids without the interactive offset: 18. That mutation is
   invisible on 1.10 with `--threads=4`, whose offset is 0;
 - the overlap check removed: 2.
@@ -1591,24 +1537,19 @@ What it says:
   (`--project=.`), with only the standard library's `Printf` besides.
 - Test-only dependencies are in `test/Project.toml`, with its own
   `[compat]`.
-  - Its `[deps]` are CommonSolve, LinearAlgebra,
+  - Its `[deps]` are CommonSolve, LinearAlgebra, MultiFloats,
     OrdinaryDiffEqLowOrderRK, OrdinaryDiffEqSDIRK, OrdinaryDiffEqSSPRK,
-    TOML and Test. TOML is there for the project-file checks, and the
-    three OrdinaryDiffEq packages for the oracles, with the `[compat]`
-    bounds `"2.2.5"`, `"2.9.7"` and `"2.3.2"`, the versions the suite
-    ran against ([The oracle](#the-oracle)). CommonSolve is there because
-    the tests load it by name, which a dependency of the package alone
-    does not allow (without it, `scaffold_tests.jl`
-    fails with "Package CommonSolve not found"). Its bound is the root
-    `[compat]`'s, which the resolver applies through this package.
-  - The test environment is CommonSolve, LinearAlgebra, MultiFloats
-    (compat `3.3.2`), OrdinaryDiffEqLowOrderRK (compat `2.2.5`),
-    OrdinaryDiffEqSDIRK (compat `2.9.7`) and OrdinaryDiffEqSSPRK (compat
-    `2.3.2`), the oracles, TOML and Test.
-
-    **Inconsistent:** the `[deps]` of the item above omit MultiFloats,
-    which this item (from `CLAUDE.md`'s file inventory) and
-    [Requirements](#requirements) list as a test-only dependency.
+    TOML and Test. TOML is there for the project-file checks, the three
+    OrdinaryDiffEq packages for the oracles, and MultiFloats for the
+    double-float tests. Those four are bounded in `[compat]`, from the
+    versions the suite ran against, since the recorded numbers describe
+    them: MultiFloats `"3.3.2"`, OrdinaryDiffEqLowOrderRK `"2.2.5"`,
+    OrdinaryDiffEqSDIRK `"2.9.7"` and OrdinaryDiffEqSSPRK `"2.3.2"`
+    ([The oracle](#the-oracle)). CommonSolve is there because the tests
+    load it by name, which a dependency of the package alone does not
+    allow (without it, `scaffold_tests.jl` fails with "Package
+    CommonSolve not found"). Its bound is the root `[compat]`'s, which
+    the resolver applies through this package.
   - This package is not listed. On Julia 1.10 and
     1.13 alike, `Pkg.test()` copies `test/Project.toml` to a temporary
     environment, keeps its `[compat]`, and adds this package to its
@@ -1616,14 +1557,9 @@ What it says:
     also writes a `[sources]` entry. It writes no `test/Manifest.toml`.
   - `scaffold_tests.jl` checks both files: the root has no `[extras]`,
     `[targets]`, `[weakdeps]` or `[sources]`; `test/Project.toml` has
-    exactly those five, the one bound and no `[sources]`; and under
-    `Pkg.test()` the active environment is that file's copy with this
-    package added.
-
-    **Inconsistent:** "exactly those five, the one bound" does not match
-    the seven `[deps]` and three OrdinaryDiffEq bounds listed above, nor
-    the eight dependencies and four bounds of the test environment as
-    `CLAUDE.md` listed it.
+    exactly the eight `[deps]` and four bounds above and no `[sources]`;
+    and under `Pkg.test()` the active environment is that file's copy
+    with this package added.
 - The one exception is the device smoke run: `test/metal_tests.jl` runs
   in `test/metal/Project.toml`, an environment of its own, whose
   dependencies are in [On a device](#on-a-device). `runtests.jl` does not
@@ -1660,23 +1596,18 @@ The README carries two badges: CI's, for `.github/workflows/CI.yml` on
 cell uploads coverage to Codecov, with the `CODECOV_TOKEN` secret and
 `fail_ci_if_error: false`, so a Codecov outage does not turn a green run
 red. A green CI run is therefore not by itself evidence that coverage was
-uploaded: the Codecov step's log says
-([HISTORY.md](HISTORY.md#documentation) has the failed first uploads).
+uploaded: the Codecov step's log says.
 
 ## Why not an existing package
 
 Surveyed 2026-09-24. The tableaus exist elsewhere; the stage contract
 does not.
 
-### OrdinaryDiffEq (OrdinaryDiffEqSDIRK 2.9.6)
+### OrdinaryDiffEq (OrdinaryDiffEqSDIRK 2.9.7)
 
-Surveyed at 2.9.6. 2.9.7 changes only the mistimed last explicit stage
-and `ARS443`'s `b̃`, both below.
-
-It has had `IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP3332`, `IMEXSSP3433`,
-`ARS222`, `ARS232` and `ARS443` since mid-2026
-(SciML/OrdinaryDiffEq.jl#3704, #3705), on `SplitODEProblem`, with
-Julia 1.10 compat. Measured:
+It has `IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP3332`, `IMEXSSP3433`,
+`ARS222`, `ARS232` and `ARS443` (SciML/OrdinaryDiffEq.jl#3704, #3705),
+on `SplitODEProblem`, with Julia 1.10 compat. Measured:
 
 - **The stage solve is OrdinaryDiffEq's.** It is handed `g` and solves
   each stage on the whole vector:
@@ -1694,12 +1625,6 @@ Julia 1.10 compat. Measured:
   where column 1 of `Ã` and `b̃₁` are zero, and once more per step for
   the interpolant: five evaluations per SSP3(4,3,3) step where three are
   needed.
-- **Mistimed last explicit stage.** It is evaluated at `t + Δt` instead
-  of `t + c̃_s Δt`. As a result, IMEXSSP3332 and IMEXSSP3433 are only
-  first order when `f` depends on `t` (1.01 instead of 2 and 3). The fix
-  is one line. Reported as SciML/OrdinaryDiffEq.jl#4620, and
-  fixed in OrdinaryDiffEqSDIRK 2.9.7, which evaluates it at
-  `t + c̃_s Δt`.
 - A heavy dependency tree (about 180 packages, with ForwardDiff,
   LinearSolve and NonlinearSolve), and serial stage arithmetic.
 
@@ -1711,20 +1636,17 @@ limiter, one call per stage) would rest on behaviour upstream does not
 promise. Revisit if upstream gains a user stage-solver hook.
 
 **Use as a test oracle.** Upstream agrees with a direct
-reference step to 1e−16 on a linear problem with default settings. These
-apply:
+reference step to 1e−16 on a linear problem with default settings, with
+these restrictions:
+- **OrdinaryDiffEqSDIRK 2.9.7 or later.** Earlier releases evaluate the
+  last explicit stage at `t + Δt` instead of `t + c̃_s Δt`
+  (SciML/OrdinaryDiffEq.jl#4620), which makes IMEXSSP3332 and
+  IMEXSSP3433 first order when `f` depends on `t`, and their `ARS443` has
+  a `b̃` other than the paper's;
 - the state must be real (its default AD Jacobian rejects a complex
   state);
-- `f` may depend on `t` from 2.9.7 on, the compat bound: with a
-  `t`-dependent `f`, 2.9.7 agrees with all six to 4.5e−16 (#4620; before
-  2.9.7 this was a restriction, see [HISTORY.md](HISTORY.md#ordinarydiffeq));
-- its `ARS443` has the paper's `b̃` from 2.9.7 on, the last row of `Ã`
-  (see "Cross-checks" under [Tableaus](#tableaus)), and is compared with
-  `ARS443()`;
-- SSP2(3,3,2) is in neither upstream, so it has no oracle. Its
-  coefficients are checked against the paper, Table 4 of
-  arXiv:1009.2757, and the measurements of [Validation](#validation)
-  agree with them ("Cross-checks").
+- SSP2(3,3,2) is in neither upstream, so it has no oracle
+  ("Cross-checks" under [Tableaus](#tableaus)).
 
 The oracle comparisons are in [The oracle](#the-oracle).
 
@@ -1752,117 +1674,105 @@ It still does not fit:
 ## Testing
 
 Testset names are claims, each opening with a comment that names the
-failure mode it guards.
+failure mode it guards. Which file holds which group is in
+[File layout](#file-layout).
 
 - **Tableaus:**
   - each meets its stated order and fails at the next, exactly for the
-    rational forms and to a tiny residual in `BigFloat` for the others;
+    rational forms and to a tiny residual in `BigFloat` for the others:
+    the IMEX tableaus by the additive order conditions, the explicit
+    ones and `ImplicitEuler` by the classical conditions of their one
+    part. The classical conditions come from the rooted trees, whose
+    counts per order (1, 1, 2, 4, 9, 20, 48, 115, 286) are checked;
+    Butcher62 and CooperVerner8 meet all 37 and 200, and miss the next
+    order by the recorded amount;
   - the triangularity and admissibility are as stated;
   - the recorded properties (stiff accuracy, L-stability, SSP
-    coefficient) are regression-tested;
-  - also:
-    - a perturbation of any one coefficient fails a check, except the
-      one coefficient named in "What the order conditions do not see";
-    - the closed forms are the derived values;
-    - the tableaus and their converted coefficients do not depend on the
-      global `BigFloat` precision;
-    - the 14 printed digits of SSP3(4,3,3) are the closed form rounded;
-    - the ARS(4,4,3) variant with `b̃ = b`, OrdinaryDiffEqSDIRK 2.9.6's,
-      is third order too.
-  - also, for the explicit tableaus: each meets the
-    classical conditions of its order exactly and misses the next; a slip
-    in any one coefficient fails one; the SSP coefficient, the patterns
-    and the scratch count are as recorded; SSPRK(3,3) is SSP3(3,3,2)'s
-    explicit part.
-  - also: the classical conditions come from the
-    rooted trees, whose counts per order (1, 1, 2, 4, 9, 20, 48, 115,
-    286) are checked; Butcher62 and CooperVerner8 meet all 37 and 200,
-    and miss the next order by the recorded amount; Cooper–Verner's nodes
-    and Lobatto weights, and its independence of the global precision;
-    the new tableaus' converted coefficients are correctly rounded;
-    `ImplicitEuler` is backward Euler, first order, L-stable and stiffly
-    accurate, with no explicit stage.
-- **Mechanics:**
-  - `step!` is allocation-free after warm-up;
+    coefficient, the patterns and the scratch count) are
+    regression-tested;
+  - a perturbation of any one coefficient fails a check, except the
+    one coefficient named in "What the order conditions do not see";
+  - the closed forms are the derived values, Cooper–Verner's nodes and
+    Lobatto weights included, and the 14 printed digits of SSP3(4,3,3)
+    are the closed form rounded;
+  - the tableaus and their converted coefficients do not depend on the
+    global `BigFloat` precision, and the converted coefficients are
+    correctly rounded;
+  - SSPRK(3,3) is SSP3(3,3,2)'s explicit part, and `ImplicitEuler` is
+    backward Euler, first order, L-stable and stiffly accurate, with no
+    explicit stage.
+- **Mechanics**, over every named tableau:
   - `solve_imp!` is called once per implicit stage, with the documented
     arguments (a mock);
   - `f_exp!` is called once per nonzero column, at `tⁿ + c̃_k Δt` (a
-    mock): three times per SSP3(4,3,3) step;
+    mock): three times per SSP3(4,3,3) step. The call sequence of each
+    step equals one rederived from the exact tableau, time by time;
   - the stage limiter is called exactly before each `f_exp!` call, on
-    the same array, and never on `integ.u` (a mock);
-  - at a trivial first stage, `f_exp!` receives `integ.u` itself;
-  - also: the mechanics run over the explicit
-    tableaus too; a trivial first stage reads `uⁿ` as the step limiter
-    left it, unlimited by the stage limiter; an explicit tableau takes
-    `solve_imp! = nothing` and never calls one given; `init` refuses
-    `nothing` for a tableau that solves;
-  - also: the mechanics run over Butcher62,
-    CooperVerner8 and ImplicitEuler too; `ImplicitEuler` takes
-    `f_exp! = nothing` and never calls an `f_exp!` or a stage limiter
-    given; `init` refuses `f_exp! = nothing` for a tableau that reads an
-    explicit tendency;
+    the same array, and never on `integ.u` (a mock); its change reaches
+    `f_exp!` and nothing else;
+  - at a trivial first stage, `f_exp!` receives `integ.u` itself, as the
+    step limiter left it, unlimited by the stage limiter;
+  - an explicit tableau takes `solve_imp! = nothing` and never calls one
+    given; `ImplicitEuler` takes `f_exp! = nothing` and never calls an
+    `f_exp!` or a stage limiter given; `init` refuses `nothing` for a
+    callback the tableau needs;
   - scratch filled with NaN before the first step leaves no NaN in the
     result, so no structural zero is read;
   - an exception thrown by `solve_imp!` leaves `integ.u` and `integ.t`
     unchanged;
-  - with `g ≡ 0`, the result equals the explicit RK method;
-  - untouched components match the explicit-only run bitwise;
+  - with `g ≡ 0`, the result equals the explicit RK method, and
+    untouched components match the explicit-only run bitwise;
+  - three tableaus of a caller's own reach the plan's corner cases, the
+    extra array, an empty-row solving stage and a dead stage;
+  - `step!` passes `@inferred` and is allocation-free after warm-up, for
+    `Float64`, `Float32` and `ComplexF64` states.
+- **By owner:**
   - broadcast, `partition = :even` and an explicit multi-range
     partition give bitwise identical results, at one thread and at four;
   - under a partition, each range is processed on its thread (a mock
     records `Threads.threadid()` per range);
   - a partition with a gap or an overlap is refused;
-  - these three are in `test/owner_tests.jl`, with:
-    the traps of reassociation and FMA over a vectorized range; `U = u★`
+  - the traps of reassociation and FMA over a vectorized range; `U = u★`
     on entry to `solve_imp!`, and NaN scratch, by owner; the combination
     count per step and `init`'s first touch, by the hook; nesting inside
     `@spawn`, a sticky task and `@threads :static`; an error on a worker
     reaching the caller as itself, after every worker has finished; a
     resized `integ.u` refused; `@inferred step!`; and the allocations of
-    [By owner, as built](#by-owner-as-built);
-  - a Float32 run works;
-  - also, in `test/multifloat_tests.jl`, for
-    MultiFloats' `Float32x2` and `Float64x2`: a MultiFloat time gets its
-    step count, over the chunk sweep; every tableau's run, with a
-    `t`-dependent `f` and `g`, is within 8 `eps(T)` of the same run in
-    256-bit `BigFloat` (measured: 2.4 and 3.3), where a coefficient,
-    abscissa or `Δt` rounded through a hardware float would leave it
-    1e−7 or 1e−16 off; the state's and the time's types stay separate
-    both ways, and a complex double-float state works; the coefficients
-    are the 256-bit values to `eps(T)/2`; a `tspan` and `dt` in the two
-    different double-floats are refused; and `step!` is inferred,
-    allocation-free on the broadcast path and by owner at one thread,
-    within the by-owner bound at more, and the same bits on either path,
-    for `Float32x2`, `Float64x2` and `Complex{Float64x2}` states;
-  - also, for `reuse`: chunks that reuse the scratch
-    give the same bits as fresh ones, for every tableau, on the broadcast
-    and by owner, with other `Δt`s and NaN in the reused arrays; `init`
-    takes the old arrays as they are and writes none, and allocates less
-    than one state; two integrators sharing scratch step in turn as if
-    apart; each misfit is refused;
-  - also: three tableaus of a caller's own reach the
-    plan's corner cases, the extra array, an empty-row solving stage and a
-    dead stage; the call sequence of each step equals one rederived from
-    the exact tableau, time by time; the stage limiter's change reaches
-    `f_exp!` and nothing else; and `step!` is allocation-free for
-    `Float64`, `Float32` and `ComplexF64` states;
-  - a device smoke run passes on Metal, gated by
-    `IMEXRUNGEKUTTA_TEST_METAL=1`. It is a short `Float32` run on an
-    `MtlArray` state with scalar indexing disallowed, so it covers the
-    broadcast path and checks that nothing indexes the state. Metal
-    enters through an environment of its own, `test/metal/Project.toml`,
-    and never through the package's test environment ([On a
-    device](#on-a-device)). It also runs a
-    `Float32x2` state.
+    [By owner, as built](#by-owner-as-built).
+- **Scratch reuse:** chunks that reuse the scratch give the same bits as
+  fresh ones, for every tableau, on the broadcast and by owner, with
+  other `Δt`s and NaN in the reused arrays; `init` takes the old arrays
+  as they are and writes none, and allocates less than one state; two
+  integrators sharing scratch step in turn as if apart; each misfit is
+  refused.
+- **Double-floats**, MultiFloats' `Float32x2` and `Float64x2`: a
+  MultiFloat time gets its step count, over the chunk sweep; every
+  tableau's run, with a `t`-dependent `f` and `g`, is within 8 `eps(T)`
+  of the same run in 256-bit `BigFloat` (measured: 2.4 and 3.3), where a
+  coefficient, abscissa or `Δt` rounded through a hardware float would
+  leave it 1e−7 or 1e−16 off; the state's and the time's types stay
+  separate both ways, and a complex double-float state works; the
+  coefficients are the 256-bit values to `eps(T)/2`; a `tspan` and `dt`
+  in the two different double-floats are refused; and `step!` is
+  inferred, allocation-free on the broadcast path and by owner at one
+  thread, within the by-owner bound at more, and the same bits on either
+  path, for `Float32x2`, `Float64x2` and `Complex{Float64x2}` states.
+- **On a device**, on request: a device smoke run passes on Metal, gated
+  by `IMEXRUNGEKUTTA_TEST_METAL=1`. It is a short `Float32` and
+  `Float32x2` run on an `MtlArray` state with scalar indexing
+  disallowed, so it covers the broadcast path and checks that nothing
+  indexes the state. Metal enters through an environment of its own,
+  `test/metal/Project.toml`, and never through the package's test
+  environment ([On a device](#on-a-device)).
 - **Order:**
   - on the split linear ODE `u′ = iu − u`, the observed order equals the
     tableau's, ±0.1;
   - likewise on `u′ = −u + cos t` (implicit `−u`, explicit `cos t`),
-    which catches a mistimed explicit stage (the #4620 failure mode) and
-    is invisible to a problem where `f` does not depend on `t`.
-  - Measured by mutation: #4620's mistiming, the last explicit
-    stage at `tⁿ + Δt`, drops SSP3(3,3,2) and SSP3(4,3,3) to order 1.02
-    on it, as upstream measured. But a swap of `c̃` and `c` at every stage
+    which catches a mistimed explicit stage and is invisible to a
+    problem where `f` does not depend on `t`.
+  - Measured by mutation: the last explicit stage at `tⁿ + Δt`, as in
+    SciML/OrdinaryDiffEq.jl#4620, drops SSP3(3,3,2) and SSP3(4,3,3) to
+    order 1.02 on it. But a swap of `c̃` and `c` at every stage
     is invisible to it. The coupling conditions `b̃ᵀc = 1/2` and
     `b̃ᵀc² = 1/3` make an `f` of `t` alone integrate the same with either
     abscissa, up to order 3. The mechanics test of the call times catches
@@ -1891,24 +1801,20 @@ failure mode it guards.
     `ε = 10⁻¹²` ([SSP and total
     variation](#ssp-and-total-variation)).
 - **Oracle:** each tableau OrdinaryDiffEqSDIRK has matches it to 1e−12
-  over ten steps, within the restrictions above. That is all but
-  SSP2(3,3,2). The explicit three match
-  OrdinaryDiffEqLowOrderRK's `Euler` and `RK4` and OrdinaryDiffEqSSPRK's
-  `SSPRK33`, and `ImplicitEuler` OrdinaryDiffEqSDIRK's.
-  Butcher62 and CooperVerner8 have no oracle run.
-  - Also: the 14-digit SSP3(4,3,3) is compared on its own.
-  - Against 2.9.7: with a `t`-dependent `f`, every
-    tableau matches, `c̃_s ≠ 1` included; ARS(4,4,3) is compared with `ARS443()`;
-    and the paper's ARS(4,4,3) differs from 2.9.6's `b̃ = b` variant by
-    `O(Δt⁴)` per step.
+  over ten steps, with an autonomous and a `t`-dependent `f`, within the
+  restrictions of [Why not an existing package](#why-not-an-existing-package):
+  all IMEX tableaus but SSP2(3,3,2), and `ImplicitEuler`. `Euler`, `RK4`
+  and `SSPRK33` match OrdinaryDiffEqLowOrderRK's and OrdinaryDiffEqSSPRK's.
+  Butcher62 and CooperVerner8 have no oracle run. The 14-digit
+  SSP3(4,3,3) is compared on its own.
 - **A PDE:** the Jin–Xin relaxation
   of 2D Burgers' equation, `examples/jin_xin_2d.jl`,
   `u_t + v_x + w_y = 0`, `v_t + a²u_x = −(v − u²/2)/ε`,
   `w_t + a²u_y = −(w − u²/2)/ε`, periodic, 20 × 20 cells, first-order
   upwind for the linear hyperbolic part (explicit), and the relaxation
   (implicit) solved in closed form. It checks the interface end to end on
-  a state that is a 3 × 20 × 20 `Array`, not a vector. For all seven
-  tableaus, at `a = 2`, `Δt = 0.01`, 25 steps (asserted by
+  a state that is a 3 × 20 × 20 `Array`, not a vector. For the seven
+  IMEX tableaus, at `a = 2`, `Δt = 0.01`, 25 steps (asserted by
   `test/jin_xin_tests.jl`):
   - `sum(u)` is conserved to 2e−13, since the stage solve leaves `u` as
     it entered;
@@ -1940,12 +1846,22 @@ the tolerance given, so that a regression is caught.
 
 ### Observed orders
 
-`test/order_tests.jl`. Both problems have the implicit part `−u` and run
-to `t = 1`, with `Δt = 1/10, …, 1/160`; the fit uses the finest three,
-`1/40, 1/80, 1/160`. Each is asserted within 0.1 of the stated order, and
-within 0.005 of the number here.
+`test/order_tests.jl`. Two linear problems, run to `t = 1` with
+`Δt = 1/10, …, 1/160`; the fit uses the finest three,
+`1/40, 1/80, 1/160`. Each family splits them its own way:
+- the IMEX tableaus take `−u` implicitly and the rest explicitly;
+- the explicit tableaus take all of it explicitly, with no stage solver.
+  Butcher62 and CooperVerner8 run in 256-bit `BigFloat`, state and time,
+  since in `Float64` their errors reach round-off within the step sizes
+  ([Explicit tableaus](#explicit-tableaus));
+- `ImplicitEuler()` takes all of it implicitly, with `f_exp! = nothing`
+  and the stage solves `U = u★/(1 − Δt(i − 1))` and
+  `U = (u★ + Δt cos t)/(1 + Δt)`.
 
-| | stated | `u′ = iu − u` (complex) | `u′ = −u + cos t` |
+Each order is asserted within 0.1 of the stated order, and within 0.005
+of the number here.
+
+| | stated | `u′ = (i − 1)u` (complex) | `u′ = cos t − u` |
 |---|---|---|---|
 | SSP2(2,2,2) | 2 | 2.004 | 2.002 |
 | SSP2(3,2,2) | 2 | 2.008 | 2.029 |
@@ -1954,28 +1870,16 @@ within 0.005 of the number here.
 | SSP3(4,3,3) | 3 | 3.007 | 3.006 |
 | ARS(2,2,2) | 2 | 2.004 | 2.009 |
 | ARS(4,4,3) | 3 | 3.005 | 3.001 |
-
-The explicit tableaus run the same two problems with the implicit part
-made explicit, `u′ = (i − 1)u` and `u′ = cos t − u`, and no stage solver:
-
-| | stated | `u′ = (i − 1)u` (complex) | `u′ = cos t − u` |
-|---|---|---|---|
 | Euler | 1 | 1.009 | 1.002 |
 | RK4 | 4 | 4.011 | 4.004 |
 | SSPRK(3,3) | 3 | 3.011 | 3.006 |
 | Butcher62, `BigFloat` | 6 | 6.013 | 5.988 |
 | CooperVerner8, `BigFloat` | 8 | 8.012 | 8.006 |
+| ImplicitEuler | 1 | 0.991 | 0.998 |
 
-Butcher62 and CooperVerner8 run in 256-bit `BigFloat`, state and time,
-since in `Float64` their errors reach round-off within the step sizes
-([Explicit tableaus](#explicit-tableaus)).
-
-`ImplicitEuler()` runs the same two problems all implicit, with
-`f_exp! = nothing` and the stage solves `U = u★/(1 − Δt(i − 1))` and
-`U = (u★ + Δt cos t)/(1 + Δt)`: order 0.991 and
-0.998, and on the second an error of 7.393e−4 at `Δt = 1/160`, asserted
-to 1%, since a solve at `tⁿ` rather than `tⁿ⁺¹` would still be first
-order.
+`ImplicitEuler`'s error on the second problem, 7.393e−4 at
+`Δt = 1/160`, is asserted to 1% too, since a solve at `tⁿ` rather than
+`tⁿ⁺¹` would still be first order.
 
 ### The stiff limit
 
@@ -2037,10 +1941,9 @@ largest over the steps and over both components; the order is fitted over
 | SSP3(4,3,3) | −0.28436465 | — | −0.28436465 | — | −7.1610e−3 | 1.962 |
 | ARS(2,2,2) | 0 (`w = 0`) | 0 | 1.0ε/Δt | 0 | 9.4e−14 (0.094ε) | — |
 | ARS(4,4,3) | 0 (`w = 0`) | 0 | 1.0ε/Δt | 0 | 4.2e−14 (0.042ε) | — |
-| ARS(4,4,3), 2.9.6's `b̃ = b` | — | — | — | — | 6.4568e−5 | 3.974 |
 
 - The Kaps residuals are asserted to 1% and their orders, over
-  `Δt = 0.1, 0.05, 0.025, 0.0125`, to ±0.15 of 2, 2, 2, 3, 2 and 4. For
+  `Δt = 0.1, 0.05, 0.025, 0.0125`, to ±0.15 of 2, 2, 2, 3 and 2. For
   ARS the residual is asserted below ε at every `Δt`.
 - **Over many steps nothing accumulates.** For the relaxation, see "Where
   a step ends in the stiff limit". For Kaps, after 10 steps of `Δt = 0.1`
@@ -2067,6 +1970,11 @@ to 1e−3.
 | SSP3(4,3,3) | 1 | 1.0000 | 0.6840 | 0 | `4κC`, `κ = 0.28436465` |
 | ARS(2,2,2) | 0 | 1.0000 | 0.7286 | ≥ 4 | 0 |
 | ARS(4,4,3) | 0 | 0.0021 | 0.0021 | ≥ 4 | 0 |
+| Euler | 1 | 1.0000 | — | — | — |
+| RK4 | 0 | 1.0000 | — | — | — |
+| SSPRK(3,3) | 1 | 1.0000 | — | — | — |
+| Butcher62 | 0 | 0.0524 | — | — | — |
+| CooperVerner8 | 0 | 0.2095 | — | — | — |
 
 - **Without relaxation** `C` is the linear threshold of the explicit
   stability polynomial, and equals the SSP coefficient for the five
@@ -2075,11 +1983,9 @@ to 1e−3.
   coefficient `−7/288`, so no positive threshold; its 0.0021 is where the
   `O(C⁴)` rise falls below the tolerance, and `C = 0.01` fails (a test).
 - **The explicit tableaus** have no relaxation, and are measured without
-  it only: `C = 1.0000` for Euler, RK4 and
-  SSPRK(3,3). For Euler and SSPRK(3,3) that is the SSP coefficient; RK4's
+  it only. For Euler and SSPRK(3,3) `C` is the SSP coefficient; RK4's
   is 0, but its polynomial `1 + z + z²/2 + z³/6 + z⁴/24` has the linear
-  threshold 1. Butcher62 and CooperVerner8: `C =
-  0.0524` and `0.2095`. Their polynomials end in `−(7/3) z⁷/7!` and
+  threshold 1. Butcher62's and CooperVerner8's polynomials end in `−(7/3) z⁷/7!` and
   `−0.83 z¹¹/11!`, whose linear thresholds are only 8.0e−9 and 1.0e−6;
   as for ARS(4,4,3), the bisected `C` is where the rise, of high order in
   `C`, falls below the tolerance. They are not for discontinuities.
@@ -2106,7 +2012,15 @@ overshoot, `κ Δt |f|` with `|f| ~ jump/Δx`, next to each jump of it.
 
 `test/oracle_tests.jl`: `SplitODEProblem(g, f, …)` with upstream's
 defaults, ten steps of `Δt = 0.1` of `u′ = Lu + Mu + a cos(3t) v` on three
-real components, `Lu` implicit. Upstream is OrdinaryDiffEqSDIRK 2.9.7.
+real components, `Lu` implicit.
+
+Upstream is OrdinaryDiffEqSDIRK for the IMEX tableaus and
+`ImplicitEuler`, and OrdinaryDiffEqLowOrderRK (`Euler`, `RK4`) and
+OrdinaryDiffEqSSPRK (`SSPRK33`) for the explicit ones, run with
+`adaptive = false`. The explicit tableaus take the problem wholly
+explicit, `u′ = (L + M)u + a cos(3t) v`; `ImplicitEuler()` takes it
+wholly implicit, with `f_exp! = nothing` and the stage solve
+`U = (I − Δt(L + M)) \ (u★ + Δt a cos(3t) v)`.
 
 | | `c̃_s` | `a = 0` | `a = 1` |
 |---|---|---|---|
@@ -2116,35 +2030,25 @@ real components, `Lu` implicit. Upstream is OrdinaryDiffEqSDIRK 2.9.7.
 | SSP3(4,3,3) | 1/2 | 5.3e−16 | 4.5e−16 |
 | ARS(2,2,2) | 1 | 2.8e−17 | 1.4e−16 |
 | ARS(4,4,3) | 1 | 2.8e−16 | 6.6e−17 |
+| Euler | — | 3.5e−17 | 9.4e−17 |
+| RK4 | — | 2.8e−17 | 3.8e−17 |
+| SSPRK(3,3) | — | 2.8e−17 | 1.2e−16 |
+| ImplicitEuler | — | 8.3e−17 | 9.7e−17 |
 
+- Every comparison is a plain `@test d < 1e-12`. The `a = 1` column
+  sees every explicit abscissa, `c̃_s ≠ 1` included.
 - The 1e−12 tolerance absorbs upstream's 14-digit SSP3(4,3,3): ten steps
   with the printed digits, held exactly as decimals, differ from the
   closed form by 4.9e−16, and from upstream by 1.9e−16.
-- The paper's ARS(4,4,3) differs from 2.9.6's `b̃ = b` variant by
-  2.5e−5 over the ten steps, `O(Δt⁴)` per step, a test of its own that
-  needs no upstream ("Cross-checks").
-- The explicit tableaus against OrdinaryDiffEqLowOrderRK 2.2.5's `Euler`
-  and `RK4` and OrdinaryDiffEqSSPRK 2.3.2's `SSPRK33`, on the same problem
-  made wholly explicit, `u′ = (L + M)u + a cos(3t) v`, with
-  `adaptive = false`:
-
-  | | `a = 0` | `a = 1` |
-  |---|---|---|
-  | Euler | 3.5e−17 | 9.4e−17 |
-  | RK4 | 2.8e−17 | 3.8e−17 |
-  | SSPRK(3,3) | 2.8e−17 | 1.2e−16 |
-- `ImplicitEuler()` against OrdinaryDiffEqSDIRK's `ImplicitEuler`, on the
-  same problem made wholly implicit, with `f_exp! = nothing` and the
-  stage solve `U = (I − Δt(L + M)) \ (u★ + Δt a cos(3t) v)`: 8.3e−17 for
-  `a = 0` and 9.7e−17 for `a = 1`.
-  Butcher62 and CooperVerner8 have no oracle run; they are checked
+- Butcher62 and CooperVerner8 have no oracle run; they are checked
   against OrdinaryDiffEqExplicitTableaus by reading
   ([Explicit tableaus](#explicit-tableaus)).
-- `test/Project.toml` bounds OrdinaryDiffEqSDIRK by `"2.9.7"`, that is
-  `[2.9.7, 3)`, the release that fixed #4620 and gave `ARS443` the
-  paper's `b̃` ([HISTORY.md](HISTORY.md#the-oracle)), and every comparison
-  above is a plain `@test d < 1e-12`. A later upstream change to the
-  tableaus or the stage times shows as a failure here.
+- The upstream versions are bounded below in `test/Project.toml`
+  ([File layout](#file-layout)): OrdinaryDiffEqSDIRK by `"2.9.7"`, which
+  the comparison with a `t`-dependent `f` and the paper's `ARS443` need
+  ([Why not an existing package](#why-not-an-existing-package)). A later
+  upstream change to the tableaus or the stage times shows as a failure
+  here.
 
 ## On a device
 
@@ -2160,8 +2064,7 @@ unless given for each.
   [`CLAUDE.md`](CLAUDE.md#commands) runs
   `Pkg.develop(path = ".")` first, which works on both and leaves the
   tracked file unchanged. The root `Project.toml` still has no `[sources]`.
-- Its manifest does not have OrdinaryDiffEqSDIRK; its size is under
-  [Requirements](#requirements).
+- Its manifest does not have OrdinaryDiffEqSDIRK.
 - A `Pkg.add` inside the gated file would instead change `Pkg.test()`'s
   sandbox from within the test run, and resolve Metal against the whole
   test environment, oracle included.
@@ -2272,10 +2175,7 @@ arithmetic being `Float32` operations on the two limbs.
 
 ## Open questions
 
-For the package design:
-
-- Where a TreeAMR state vector's ownership partition comes from
-  ([Stage arithmetic](#stage-arithmetic)).
+None for the package design.
 
 Deferred:
 

@@ -1,6 +1,5 @@
-# Test-only helpers shared by the validation files of step 3: the fitted
-# order, the Kaps problem, which `stiff_tests.jl` and `ap_tests.jl` both
-# use, and the ARS(4,4,3) variant of `ap_tests.jl` and `oracle_tests.jl`.
+# Test-only helpers shared by the validation files: the fitted order and
+# the Kaps problem, which `stiff_tests.jl` and `ap_tests.jl` both use.
 
 """
     fitted_order(dts, errs)
@@ -31,10 +30,4 @@ function kaps_imp!(U, u★, γΔt, ε, t)
     U[2] = u★[2]
     U[1] = (ε * u★[1] + γΔt * U[2]^2) / (ε + γΔt)
     return nothing
-end
-
-# ARS(4,4,3) with `b̃ = b`, as OrdinaryDiffEqSDIRK held it until 2.9.6: not
-# the paper's, but a third-order method too ("Cross-checks" in `CODE.md`).
-const ARS443_2_9_6 = let t = ARS443()
-    IMEXTableau("ARS(4,4,3), OrdinaryDiffEqSDIRK 2.9.6's b̃ = b", t.Ã, t.b, t.A, t.b)
 end

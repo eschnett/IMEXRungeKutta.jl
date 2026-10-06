@@ -25,29 +25,32 @@ Where content goes:
   is not settled is marked, as **(open)** or **(proposed)**.
 - **`PLAN.md`**, a concrete plan, when there is one: steps, each with
   what it delivers and how one knows it is done. There is none now.
-- **`HISTORY.md`**, how the package got here: who decided what and when,
-  rejected alternatives, replaced measurements, fixed upstream bugs and
-  the releases, by topic.
+- **`HISTORY.md`**, the decisions that shaped the package, with who took
+  them, when and why, the alternatives they rejected, and the releases.
+  Not superseded states or old measurements: the git log has those.
 
 The test between `CODE.md` and `HISTORY.md`: would someone changing the
 code today need this? Then `CODE.md`, rationale included.
 
 - **Spec-first.** When the implementation shows `CODE.md` wrong or
-  incomplete, fix `CODE.md` to describe the current state, and record in
-  `HISTORY.md` what changed, when and why.
+  incomplete, fix `CODE.md` to describe the current state. Record a
+  decision, with who took it, when and why, in `HISTORY.md`.
+- **Describe the package as it is.** Work a new feature into the existing
+  text, lists and tables; do not append "also" paragraphs, second tables
+  or corrections of earlier paragraphs. Drop what a change makes
+  obsolete, such as a superseded upstream version or measurement.
 - **Keep the tables of contents current**, in every one of these files:
   `##` and `###` headings in `CODE.md`, `PLAN.md` and `HISTORY.md`, `##`
   only in `README.md` and here.
 
 ## What this package is
 
-Fixed-step additive implicit–explicit Runge–Kutta integrators
-(IMEX-SSP of Pareschi & Russo, and ARS) in which **the user solves the
-implicit stage equation** (`CODE.md`, "Purpose" and "Requirements").
-Per implicit stage the integrator calls `solve_imp!(U, u★, γΔt, p, t)`
-once and never evaluates the stiff term or forms a Jacobian. Open:
-where a TreeAMR state vector's ownership partition comes from
-(`CODE.md`, "Stage arithmetic").
+Fixed-step Runge–Kutta integrators: additive implicit–explicit (IMEX-SSP
+of Pareschi & Russo, and ARS), purely explicit, and backward Euler, in
+which **the user solves the implicit stage equation** (`CODE.md`,
+"Purpose" and "Requirements"). Per implicit stage the integrator calls
+`solve_imp!(U, u★, γΔt, p, t)` once and never evaluates the stiff term or
+forms a Jacobian.
 
 ## Commands
 
@@ -91,8 +94,7 @@ when this package depends on it.
 **The test environment is large** (`CODE.md`, "Requirements"). A fresh
 `Pkg.test()` spends about two minutes precompiling it, and the suite
 takes about one minute at one thread, most of it `oracle_tests.jl`; a
-first `--check-bounds=yes` run precompiles again and runs slower. The
-measurements are in `HISTORY.md`, "The test environment".
+first `--check-bounds=yes` run precompiles again and runs slower.
 
 `Manifest.toml` is untracked and shared between Julia versions. `Pkg.test`
 re-resolves a manifest written by the other version by itself, but a
@@ -252,10 +254,8 @@ Traps that the design makes easy to fall into. The why is in `CODE.md`.
   - Upstream's state must be real.
   - Upstream's SSP3(4,3,3) uses the 14-digit coefficients, which differ
     from the closed form by about 1e−15.
-  - `ARS443_2_9_6` in the tests is OrdinaryDiffEqSDIRK 2.9.6's `ARS443`,
-    with `b̃ = b`, not the paper's: a third-order method of its own, in
-    the `O(Δt⁴)` test and the stiff-limit table. Upstream from 2.9.7 is
-    compared with `ARS443()` (`CODE.md`, "Cross-checks").
+  - OrdinaryDiffEqSDIRK must be 2.9.7 or later: earlier releases
+    mistime the last explicit stage and have another `ARS443`.
 - **MultiFloats converts only through `BigFloat`** (`CODE.md`,
   "Software floats"). A double-float has no `Int`, `Float64`, `round(Int,
   …)` or `cos`, so a `T(x)` between two float types in `src/` goes

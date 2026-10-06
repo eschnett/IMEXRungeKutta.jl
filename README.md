@@ -7,14 +7,14 @@
 - [Example](#example)
 - [Status](#status)
 
-Fixed-step additive implicit–explicit Runge–Kutta (IMEX RK) integration
-for method-of-lines systems
+Fixed-step Runge–Kutta integration for method-of-lines systems
 
     u′ = f(u, t) + g(u, t)
 
 where `f` is non-stiff and treated explicitly and `g` is stiff and
-treated implicitly — **with the implicit stage equation solved by the
-caller**. Per implicit stage the integrator makes exactly one call
+treated implicitly. The core is additive implicit–explicit (IMEX)
+Runge–Kutta, **with the implicit stage equation solved by the caller**.
+Per implicit stage the integrator makes exactly one call
 
     solve_imp!(U, u★, γΔt, p, t)
 
@@ -24,27 +24,31 @@ few unknowns per cell. The integrator recovers the implicit increment as
 `U − u★`. It never evaluates `g`, never forms a Jacobian, and has no
 nonlinear-solver loop of its own.
 
+The thirteen tableaus come in three kinds, all held in closed form in
+extended precision:
+- **IMEX:** SSP2(2,2,2), SSP2(3,2,2), SSP2(3,3,2), SSP3(3,3,2) and
+  SSP3(4,3,3) of Pareschi & Russo (2005), and ARS(2,2,2) and ARS(4,4,3)
+  of Ascher, Ruuth & Spiteri (1997);
+- **explicit**, with no stage solver: explicit Euler (for debugging),
+  classical RK4, Shu & Osher's SSPRK(3,3), Butcher's sixth-order and
+  Cooper & Verner's eighth-order methods;
+- **implicit**, with no explicit part: backward Euler.
+
+A caller may also give a tableau of its own.
+
 The target is hyperbolic systems with stiff relaxation local to a grid
 cell: resistive MHD, radiation or neutrino transport, reaction networks.
+The package was written for TreeGRRMHD.jl; TreeHydro.jl and
+TreeGeneralizedHarmonic.jl use it too. Nothing here depends on them.
 
-The tableaus are SSP2(2,2,2), SSP2(3,2,2), SSP2(3,3,2), SSP3(3,3,2) and
-SSP3(4,3,3) of Pareschi & Russo (2005), and ARS(2,2,2) and ARS(4,4,3) of
-Ascher, Ruuth & Spiteri (1997), all held in closed form in extended
-precision. Three purely explicit tableaus, explicit Euler (for debugging),
-classical RK4 and Shu & Osher's SSPRK(3,3), run through the same
-integrator with no stage solver. The interface is CommonSolve's `init`, `step!`, `solve!` and
-`solve`, so the package loads beside SciMLBase or OrdinaryDiffEq without a
-name clash. It
-has stage and step limiter hooks, works for any array type that
+The interface is CommonSolve's `init`, `step!`, `solve!` and `solve`, so
+the package loads beside SciMLBase or OrdinaryDiffEq without a name
+clash. It has stage and step limiter hooks, works for any array type that
 broadcasts, and supports Julia 1.10 and later.
 
-**Inconsistent:** this paragraph names three purely explicit tableaus,
-while the example and the status below have five, `Butcher62()` and
-`CooperVerner8()` besides, and the purely implicit `ImplicitEuler()`.
-
 `CODE.md` is the design document: the requirements, the method, the
-package design, why an existing package does not fit, and the test plan.
-`HISTORY.md` records how the package got here, and the releases.
+package design, why an existing package does not fit, and the tests.
+`HISTORY.md` records the decisions that shaped it, and the releases.
 
 ## Installation
 
@@ -124,46 +128,38 @@ implicit.u[1] - exp(-1.0)       # ≈ 0.018, backward Euler's error at Δt = 0.1
 ## Status
 
 **Version 1.4.0.** `IMEXProblem`, `init`, `step!`, `solve!` and `solve`,
-with the stage and step limiters, for all thirteen named tableaus
+with the stage and step limiters, for the thirteen named tableaus
 (`IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP2332`, `IMEXSSP3332`, `IMEXSSP3433`,
-`ARS222`, `ARS443`, the explicit `Euler`, `RK4`, `SSPRK33`, `Butcher62`,
-`CooperVerner8`, and the implicit `ImplicitEuler`) and a
-caller's own `IMEXTableau`. The stage arithmetic
-is one fused broadcast per combination by default, for any array type.
-For a CPU `Array` with threads, `init(...; partition = :even)`, or an explicit partition with one
-collection of index ranges per thread, runs each combination on every
-thread at once, each element on the thread that owns it, with bitwise the
-same result. `step!` is type-stable. On the
-broadcast path it is allocation-free for a CPU `Array`; by owner it
-allocates a few hundred bytes per thread per combination, whatever the
-state size, and nothing at one thread. A chunked driver, with one
-integrator per chunk, passes the previous chunk's integrator as
-`init(...; reuse = integ)` while the grid is unchanged, to take over its
-scratch arrays instead of allocating and first-touching new ones
-(`CODE.md`, "Scratch reuse"). MultiFloats' software double-floats,
-`Float32x2` and `Float64x2`, work as the state's real type and as the
-time type, and `Float32x2` on Metal too (`CODE.md`, "Software floats").
-A purely explicit tableau takes `solve_imp! = nothing`, and the purely
-implicit `ImplicitEuler()` takes `f_exp! = nothing`.
+`ARS222`, `ARS443`; `Euler`, `RK4`, `SSPRK33`, `Butcher62`,
+`CooperVerner8`; `ImplicitEuler`) and a caller's own `IMEXTableau`.
+- The stage arithmetic is one fused broadcast per combination, for any
+  array type. `step!` is type-stable, and on this path allocation-free
+  for a CPU `Array`.
+- For a CPU `Array` with threads, `init(...; partition = :even)`, or a
+  partition of the caller's own with one collection of index ranges per
+  thread, runs each combination on every thread at once, each element on
+  the thread that owns it, with bitwise the same result. It allocates a
+  few hundred bytes per thread per combination, whatever the state size,
+  and nothing at one thread.
+- A chunked driver, with one integrator per chunk, passes the previous
+  chunk's integrator as `init(...; reuse = integ)` while the grid is
+  unchanged, to take over its scratch arrays instead of allocating and
+  first-touching new ones (`CODE.md`, "Scratch reuse").
+- MultiFloats' software double-floats, `Float32x2` and `Float64x2`, work
+  as the state's real type and as the time type, and `Float32x2` on Metal
+  too (`CODE.md`, "Software floats").
 
-What is tested, and recorded in `CODE.md`:
-- the tableaus' order, stiff accuracy, L-stability and SSP coefficient,
-  computed in extended precision;
-- the observed orders, the order in the stiff limit (SSP3(4,3,3) drops
-  from 3 to 2 there), where a step lands as `ε → 0`, and total variation
-  under upwind advection;
-- agreement with OrdinaryDiffEqSDIRK to round-off, and for the explicit
-  tableaus with OrdinaryDiffEqLowOrderRK and OrdinaryDiffEqSSPRK;
-- a PDE, the Jin–Xin relaxation of 2D Burgers' equation on a 3 × 20 × 20
-  `Array` state, in `examples/jin_xin_2d.jl`: run it with
-  `julia --project=. examples/jin_xin_2d.jl`;
-- MultiFloats' `Float32x2` and `Float64x2` as the state's and the
-  time's type, each run within a few `eps` of the same run in 256-bit
-  `BigFloat`;
-- a `Float32` and a `Float32x2` run on an Apple GPU, with an `MtlArray`
-  state and scalar indexing disallowed, which agree with the same runs
-  on the CPU. It runs on request only, in an environment of its own;
-  `test/metal_tests.jl` says how.
+What is tested (`CODE.md`, "Testing" and "Validation"): the tableaus'
+order, stiff accuracy, L-stability and SSP coefficient, in extended
+precision; the observed orders, the order in the stiff limit (SSP3(4,3,3)
+drops from 3 to 2 there), where a step lands as `ε → 0`, and total
+variation under upwind advection; agreement with OrdinaryDiffEq to
+round-off; the double-floats against 256-bit `BigFloat`; a PDE, the
+Jin–Xin relaxation of 2D Burgers' equation, in
+`examples/jin_xin_2d.jl` (run it with
+`julia --project=. examples/jin_xin_2d.jl`); and, on request, a `Float32`
+and a `Float32x2` run on an Apple GPU that agrees with the CPU
+(`test/metal_tests.jl` says how).
 
 Known limits:
 - SSP2(3,3,2) is in neither OrdinaryDiffEq nor ClimaTimeSteppers, so it
@@ -172,5 +168,5 @@ Known limits:
   `R(∞) = 0`, and the observed-order, stiff-limit and total-variation
   tests.
 - The broadcast stage arithmetic is serial on the host; `partition` is the
-  threaded path, for a CPU `Array` only. Where a TreeAMR state vector's
-  partition comes from is still open (`CODE.md`, "Stage arithmetic").
+  threaded path, for a CPU `Array` only, and the caller builds the
+  partition (`CODE.md`, "Stage arithmetic").
