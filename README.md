@@ -43,7 +43,7 @@ package design, why an existing package does not fit, and the test plan.
 The package is not registered. Add it by its URL, at the release tag:
 
     using Pkg
-    Pkg.add(url = "https://github.com/eschnett/IMEXRungeKutta.jl", rev = "v1.3.0")
+    Pkg.add(url = "https://github.com/eschnett/IMEXRungeKutta.jl", rev = "v1.4.0")
 
 ## Example
 
@@ -115,7 +115,7 @@ implicit.u[1] - exp(-1.0)       # ≈ 0.018, backward Euler's error at Δt = 0.1
 
 ## Status
 
-**Version 1.3.0.** `IMEXProblem`, `init`, `step!`, `solve!` and `solve`,
+**Version 1.4.0.** `IMEXProblem`, `init`, `step!`, `solve!` and `solve`,
 with the stage and step limiters, for all thirteen named tableaus
 (`IMEXSSP222`, `IMEXSSP2322`, `IMEXSSP2332`, `IMEXSSP3332`, `IMEXSSP3433`,
 `ARS222`, `ARS443`, the explicit `Euler`, `RK4`, `SSPRK33`, `Butcher62`,
@@ -135,6 +135,8 @@ scratch arrays instead of allocating and first-touching new ones
 (`CODE.md`, "Scratch reuse"). MultiFloats' software double-floats,
 `Float32x2` and `Float64x2`, work as the state's real type and as the
 time type, and `Float32x2` on Metal too (`CODE.md`, "Software floats").
+A purely explicit tableau takes `solve_imp! = nothing`, and the purely
+implicit `ImplicitEuler()` takes `f_exp! = nothing`.
 
 What is tested, and recorded in `CODE.md`:
 - the tableaus' order, stiff accuracy, L-stability and SSP coefficient,

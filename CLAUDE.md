@@ -124,12 +124,12 @@ What exists:
 - `.github/workflows/CI.yml`, with five cells (`CODE.md`, "File
   layout"), and `.github/dependabot.yml`;
 - `README.md`, with the CI and Codecov badges, installation by URL, the
-  worked example and the 1.3.0 status.
+  worked example and the 1.4.0 status.
 
 **TreeGRRMHD's step 5 may start.** It needs 4b, which is this step 2. It
 adds the package by URL, now the remote's,
 `Pkg.add(url = "https://github.com/eschnett/IMEXRungeKutta.jl", rev =
-"v1.3.0")`, or the latest tag. On Metal, each new state
+"v1.4.0")`, or the latest tag. On Metal, each new state
 length costs about a second of kernel compilation in Metal's broadcast
 (`CODE.md`, "On a device"), which a regrid pays.
 
@@ -140,7 +140,8 @@ and "Validation".
 
 **The releases are tagged** (2026-09-26): `v1.0.0` (2026-09-24, Erik's
 decision; no 0.1.0 was ever tagged), `v1.1.0` (the explicit tableaus),
-`v1.2.0` (scratch reuse) and `v1.3.0` (MultiFloats, 2026-09-28), each
+`v1.2.0` (scratch reuse), `v1.3.0` (MultiFloats, 2026-09-28) and
+`v1.4.0` (Butcher62, CooperVerner8 and ImplicitEuler, 2026-10-05), each
 at the commit that bumped `Project.toml`. Each has a GitHub release;
 those of the first three were created on 2026-09-28, from their tags.
 The package is not registered; tags and any registration are Erik's.
