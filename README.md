@@ -3,6 +3,10 @@
 [![CI](https://github.com/eschnett/IMEXRungeKutta.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/eschnett/IMEXRungeKutta.jl/actions/workflows/CI.yml?query=branch%3Amain)
 [![codecov](https://codecov.io/gh/eschnett/IMEXRungeKutta.jl/graph/badge.svg?token=RFHAIF5SWS)](https://codecov.io/gh/eschnett/IMEXRungeKutta.jl)
 
+- [Installation](#installation)
+- [Example](#example)
+- [Status](#status)
+
 Fixed-step additive implicit–explicit Runge–Kutta (IMEX RK) integration
 for method-of-lines systems
 
@@ -22,7 +26,6 @@ nonlinear-solver loop of its own.
 
 The target is hyperbolic systems with stiff relaxation local to a grid
 cell: resistive MHD, radiation or neutrino transport, reaction networks.
-The first intended user is TreeGRRMHD.jl; nothing here depends on it.
 
 The tableaus are SSP2(2,2,2), SSP2(3,2,2), SSP2(3,3,2), SSP3(3,3,2) and
 SSP3(4,3,3) of Pareschi & Russo (2005), and ARS(2,2,2) and ARS(4,4,3) of
@@ -35,8 +38,13 @@ name clash. It
 has stage and step limiter hooks, works for any array type that
 broadcasts, and supports Julia 1.10 and later.
 
+**Inconsistent:** this paragraph names three purely explicit tableaus,
+while the example and the status below have five, `Butcher62()` and
+`CooperVerner8()` besides, and the purely implicit `ImplicitEuler()`.
+
 `CODE.md` is the design document: the requirements, the method, the
 package design, why an existing package does not fit, and the test plan.
+`HISTORY.md` records how the package got here, and the releases.
 
 ## Installation
 
@@ -83,8 +91,8 @@ hold in the state, such as an atmosphere reset, as `step_limiter` too
 (`CODE.md`, "One step").
 
 ARS(4,4,3) is stiffly accurate, so as `ε → 0` each step ends on the
-quasi-steady state `u ≈ ū + ε cos t`. SSP3(4,3,3), the intended
-production scheme, is not: in that limit its result is off it by `O(Δt)`,
+quasi-steady state `u ≈ ū + ε cos t`. SSP3(4,3,3)
+is not: in that limit its result is off it by `O(Δt)`,
 here by about `−0.28 Δt cos t` (see `CODE.md`, "Tableaus").
 
 A purely explicit tableau, `Euler()`, `RK4()`, `SSPRK33()`, the

@@ -1,153 +1,53 @@
 # Working notes for Claude in IMEXRungeKutta.jl
 
+## Contents
+
+- [Read first](#read-first)
+- [What this package is](#what-this-package-is)
+- [Commands](#commands)
+- [Conventions](#conventions)
+- [Sharp edges](#sharp-edges)
+- [Repository facts](#repository-facts)
+
+## Read first
+
 Read `CODE.md` first. It is the design document and states *why* things
 are the way they are. This file is only about mechanics.
+
+Where content goes:
+- **`README.md`**, for users: what the package does, installation, a
+  short example, the status, and a pointer to `CODE.md`.
+- **`CLAUDE.md`**, this file, loaded into every session, so as short as
+  it can be: the map of the files, commands, conventions, sharp edges
+  and repository facts, each a short rule pointing at `CODE.md`.
+- **`CODE.md`**, the current design and the reasons for it, in the
+  present tense, without dates or step numbers on decisions; only what
+  is not settled is marked, as **(open)** or **(proposed)**.
+- **`PLAN.md`**, a concrete plan, when there is one: steps, each with
+  what it delivers and how one knows it is done. There is none now.
+- **`HISTORY.md`**, how the package got here: who decided what and when,
+  rejected alternatives, replaced measurements, fixed upstream bugs and
+  the releases, by topic.
+
+The test between `CODE.md` and `HISTORY.md`: would someone changing the
+code today need this? Then `CODE.md`, rationale included.
+
+- **Spec-first.** When the implementation shows `CODE.md` wrong or
+  incomplete, fix `CODE.md` to describe the current state, and record in
+  `HISTORY.md` what changed, when and why.
+- **Keep the tables of contents current**, in every one of these files:
+  `##` and `###` headings in `CODE.md`, `PLAN.md` and `HISTORY.md`, `##`
+  only in `README.md` and here.
 
 ## What this package is
 
 Fixed-step additive implicit–explicit Runge–Kutta integrators
 (IMEX-SSP of Pareschi & Russo, and ARS) in which **the user solves the
-implicit stage equation**. Per implicit stage the integrator calls
-`solve_imp!(U, u★, γΔt, p, t)` once, recovers the implicit tendency as
-`(U − u★)/(γΔt)`, and never evaluates the stiff term or forms a
-Jacobian. It is aimed at hyperbolic systems with stiff relaxation that
-is local to a grid cell.
-
-Rules that follow from `CODE.md` and govern every change:
-
-- **The stage contract is the package.** Exactly one `solve_imp!` call
-  per implicit stage. The tendency is taken before any limiter. No
-  nonlinear-solver loop, tolerance or retry lives here.
-- **Two abscissae.** An explicit evaluation is at `tⁿ + c̃_k Δt`, and a
-  stage solve at `tⁿ + c_k Δt`; they differ (SSP3(4,3,3) at stage 1).
-  Mixing them up is invisible on any problem where the right-hand side
-  does not depend on `t` (see SciML/OrdinaryDiffEq.jl#4620), so every
-  order test includes one where it does.
-- **Skip what the tableau does not use.** Evaluate the explicit part only
-  where column `k` of `Ã` or `b̃_k` is nonzero. Store an implicit
-  tendency only where it is read.
-- **Coefficients in extended precision.** Most tableaus are irrational.
-  Hold them in `BigFloat` (exactly, where rational) and convert to `T`
-  once. Never paste Float64 literals.
-- **Spec-first.** When the implementation shows `CODE.md` wrong or
-  incomplete, amend it and say so ("(amended in step N)", "(measured in
-  step N)").
-
-## Current state
-
-**The implementation plan is complete** (2026-09-24). Its steps 0–6,
-the scaffolding, the tableaus, the integrator on the broadcast path, the
-validation, the Metal smoke run, the stage arithmetic by owner and the
-review pass, are done, and `PLAN.md` is deleted. `CODE.md` records the
-requirements, the method, the survey of OrdinaryDiffEq and
-ClimaTimeSteppers, the package design as built and measured, the tests
-and the open questions. Erik decided every proposal the steps made on
-2026-09-24, the last (fresh tasks rather than persistent workers) through
-the Symmetry run he asked for. Open or pending:
-- where a TreeAMR state vector's ownership partition comes from (open).
-
-#4620 is fixed upstream, in OrdinaryDiffEqSDIRK 2.9.7, the oracle's
-floor since 2026-10-05 ("Repository facts").
-
-What exists:
-- `Project.toml` with CommonSolve as the one run-time dependency, and
-  `test/Project.toml`, the test environment: CommonSolve, LinearAlgebra,
-  MultiFloats (compat `3.3.2`), OrdinaryDiffEqLowOrderRK (compat
-  `2.2.5`), OrdinaryDiffEqSDIRK (compat `2.9.7`) and OrdinaryDiffEqSSPRK
-  (compat `2.3.2`), the oracles, TOML and Test;
-- `src/IMEXRungeKutta.jl`, the module, which re-exports CommonSolve's
-  `init`, `solve`, `solve!` and `step!` and exports `IMEXProblem`,
-  `IMEXTableau` and the thirteen named tableaus;
-- `src/tableau.jl`: `IMEXTableau{R}`, its checks, and the internals the
-  plan reads: `solves`, `explicit_used`, `implicit_used`, `row_empty`,
-  `needs_U`, `scratch_count` and `coefficients(T, Tt, tab)`;
-- `src/tableaus.jl`: `IMEXSSP222`, `IMEXSSP2322` (SSP2(3,2,2)),
-  `IMEXSSP2332` (SSP2(3,3,2), in neither upstream, so no oracle),
-  `IMEXSSP3332`, `IMEXSSP3433`, `ARS222` and `ARS443`, in closed form,
-  the purely explicit `Euler`, `RK4` and `SSPRK33` (2026-09-25) and
-  `Butcher62` and `CooperVerner8` (2026-10-05), for which `solve_imp!`
-  may be `nothing` (`CODE.md`, "Explicit tableaus"), and the purely
-  implicit `ImplicitEuler` (2026-10-05), for which `f_exp!` may be
-  `nothing` (`CODE.md`, "Implicit Euler");
-- `src/lincomb.jl`: `lincomb!`, `lincomb_copy!`, `copy_state!`,
-  `increment!`, `first_touch!` and `copy_initial`, each with a last
-  `partition` argument: `nothing` is one fused broadcast, and an
-  `OwnerPartition` the by-owner path of step 5, a loop per range on a
-  sticky task placed on the owning thread (`by_owner`). Also the
-  partition's checks (`owner_partition`), `same_partition`,
-  `even_partition` (`:even`) and `block_partition`, a helper for
-  segmented block layouts;
-- `src/plan.jl`: `Stage`, `StagePlan`, `build_plan` (which takes reused
-  scratch) and `plan_calls`;
-- `src/integrator.jl`: `IMEXProblem`, `IMEXIntegrator`, and the methods
-  of `init` (with `partition`, checked by `resolve_partition`, and
-  `reuse`, checked by `resolve_reuse`; `CODE.md`, "Scratch reuse",
-  2026-09-26), `step!`, `solve!` and `solve`;
-- `test/runtests.jl`, `test/scaffold_tests.jl`,
-  `test/tableau_properties.jl` (test-only helpers: order conditions,
-  the classical ones generated from rooted trees,
-  `R(z)`, the E-polynomial, the SSP coefficient), `test/tableau_tests.jl`,
-  `test/mocks.jl` (logging mock callbacks), `test/interface_tests.jl`,
-  `test/mechanics_tests.jl`, `test/smoke_order_tests.jl` and
-  `test/readme_tests.jl` (which runs the README's example);
-- the validation of step 3: `test/problems.jl` (test-only helpers: the
-  fitted order, the Kaps problem and `ARS443_2_9_6`),
-  `test/order_tests.jl`, `test/stiff_tests.jl` (Kaps), `test/ap_tests.jl`
-  (the stiff limit),
-  `test/ssp_tests.jl` (total variation) and `test/oracle_tests.jl`
-  (OrdinaryDiffEqSDIRK); the numbers are in `CODE.md`, "Validation";
-- the device smoke run of step 4: `test/metal_tests.jl`, gated by
-  `IMEXRUNGEKUTTA_TEST_METAL=1` and run in its own environment,
-  `test/metal/Project.toml` (Metal, MultiFloats, Test, and this package
-  from `../..`);
-  it is not part of `Pkg.test()`, and the ordinary suite checks that it
-  never sees Metal. The numbers are in `CODE.md`, "On a device";
-- the owner path of step 5: `test/owner_tests.jl` (bitwise identity with
-  the broadcast for every tableau, placement per range, nesting, the
-  refusals, allocations), `bench/stage_arithmetic.jl` (a thread sweep,
-  broadcast against by owner, with a persistent-worker prototype for
-  comparison) and `bench/symmetry_stage_arithmetic.sh`, its SLURM job. The
-  numbers are in `CODE.md`, "By owner, as built";
-- scratch reuse across chunks (2026-09-26): `test/reuse_tests.jl`, after
-  `owner_tests.jl`, whose helpers it uses;
-- MultiFloats' `Float32x2` and `Float64x2` as state and time type
-  (2026-09-28): `step_count` and `convert_float` convert through a
-  256-bit `BigFloat`, since MultiFloats converts to nothing else, and
-  `init` refuses a `tspan` and `dt` that promote to no concrete float.
-  `test/multifloat_tests.jl`, after `reuse_tests.jl`, is the one file of
-  the suite that loads MultiFloats; the Metal smoke run has Float32x2
-  testsets too (`CODE.md`, "Software floats" and "Float32x2 on Metal");
-- `examples/jin_xin_2d.jl`, the Jin–Xin relaxation of 2D Burgers on a
-  3 × 20 × 20 `Array` state, and `test/jin_xin_tests.jl`, which includes
-  it (`CODE.md`, "Testing", A PDE). Run it on its own with
-  `julia --project=. examples/jin_xin_2d.jl`;
-- `.github/workflows/CI.yml`, with five cells (`CODE.md`, "File
-  layout"), and `.github/dependabot.yml`;
-- `README.md`, with the CI and Codecov badges, installation by URL, the
-  worked example and the 1.4.0 status.
-
-**TreeGRRMHD's step 5 may start.** It needs 4b, which is this step 2. It
-adds the package by URL, now the remote's,
-`Pkg.add(url = "https://github.com/eschnett/IMEXRungeKutta.jl", rev =
-"v1.4.0")`, or the latest tag. On Metal, each new state
-length costs about a second of kernel compilation in Metal's broadcast
-(`CODE.md`, "On a device"), which a regrid pays.
-
-**TreeGRRMHD's 4c is this step 3.** The numbers it needs for
-SSP3(4,3,3), its L-stability, its order in the stiff limit and where its
-step ends there, are in `CODE.md`, "Where a step ends in the stiff limit"
-and "Validation".
-
-**The releases are tagged** (2026-09-26): `v1.0.0` (2026-09-24, Erik's
-decision; no 0.1.0 was ever tagged), `v1.1.0` (the explicit tableaus),
-`v1.2.0` (scratch reuse), `v1.3.0` (MultiFloats, 2026-09-28) and
-`v1.4.0` (Butcher62, CooperVerner8 and ImplicitEuler, 2026-10-05), each
-at the commit that bumped `Project.toml`. Each has a GitHub release;
-those of the first three were created on 2026-09-28, from their tags.
-The package is not registered; tags and any registration are Erik's.
-Since 1.0.0 the interface in `CODE.md`, "The
-interface" and "The callback contracts", is the public API under semantic
-versioning: a change to it is a major version.
+implicit stage equation** (`CODE.md`, "Purpose" and "Requirements").
+Per implicit stage the integrator calls `solve_imp!(U, u★, γΔt, p, t)`
+once and never evaluates the stiff term or forms a Jacobian. Open:
+where a TreeAMR state vector's ownership partition comes from
+(`CODE.md`, "Stage arithmetic").
 
 ## Commands
 
@@ -168,7 +68,7 @@ julia --project=. --check-bounds=yes -e 'using Pkg; Pkg.test()'
 
 On the floor, Julia 1.10, **`Pkg.test()` forces `--check-bounds=yes`**
 on the test process whatever the parent was started with, and ignores the
-parent's `--check-bounds=auto` (measured in step 0). The allocation tests
+parent's `--check-bounds=auto`. The allocation tests
 would then skip themselves. Pass the mode as a test-process argument,
 which does override it; this is also how CI's `julia-runtest` passes it:
 
@@ -181,44 +81,24 @@ julia +1.10 --project=. --threads=4 -e 'using Pkg; Pkg.test(julia_args=["--check
 ```
 
 `Pkg.test()` passes the parent's `--threads` on to the test process on
-both versions (measured in step 0). The suite prints the thread count and
+both versions. The suite prints the thread count and
 `CHECK_BOUNDS_FORCED` as it starts: check them.
 
-**The test environment is `test/Project.toml`** (since step 6). On 1.10
-and on 1.13, `Pkg.test()` copies it to a temporary environment, keeps its
-`[compat]`, and adds this package itself, so the file does not list it;
-it writes no `test/Manifest.toml` (measured in step 6). A package that the
-tests load by name must be listed there even when this package depends on
-it: without CommonSolve in it, `using CommonSolve` in `scaffold_tests.jl`
-fails with "Package CommonSolve not found".
+**The test environment is `test/Project.toml`** (`CODE.md`, "File
+layout"). A package that the tests load by name must be listed there even
+when this package depends on it.
 
-**The test environment is large** since step 3 added OrdinaryDiffEqSDIRK
-as the oracle: 142 packages on 1.13, 138 on 1.10; with the explicit
-oracles OrdinaryDiffEqLowOrderRK and OrdinaryDiffEqSSPRK, 144 and 140
-(measured 2026-09-25); with MultiFloats, 148 on 1.13 (measured
-2026-09-28). Measured on the M3
-(step 3), from a fresh `JULIA_DEPOT_PATH`, so including the downloads:
-- 1.13.0: 238 s in all. `Pkg.instantiate()` of the package itself, with
-  the registry, 49 s; then `Pkg.test()` 189 s, of which resolving and
-  downloading the test environment about 10 s, precompiling its 156
-  packages 116 s, and the suite 64 s.
-- 1.10.12, `julia_args=["--check-bounds=auto"]`: 169 s in all.
-  Instantiate 7 s; then `Pkg.test()` 162 s, of which about 5 s resolve and
-  download, 110 s precompiling 153 packages, and the suite 47 s.
-- With the depot warm and only `Manifest.toml` deleted, `Pkg.test()`
-  takes the suite time plus 5–10 s. A `--check-bounds=yes` run
-  precompiles the whole environment again for that flag the first time:
-  267 s on 1.13 and 331 s on 1.10, of which the suite is 99 s and 129 s.
-- The suite alone, at one thread: 64 s on 1.13 and 44–57 s on 1.10, of
-  which `oracle_tests.jl` is 38–42 s and 28 s, almost all of it compiling
-  upstream's six solvers. Under load (a load average of 14) the 1.13
-  suite took 98 s. Every other file is under 11 s.
+**The test environment is large** (`CODE.md`, "Requirements"). A fresh
+`Pkg.test()` spends about two minutes precompiling it, and the suite
+takes about one minute at one thread, most of it `oracle_tests.jl`; a
+first `--check-bounds=yes` run precompiles again and runs slower. The
+measurements are in `HISTORY.md`, "The test environment".
 
 `Manifest.toml` is untracked and shared between Julia versions. `Pkg.test`
 re-resolves a manifest written by the other version by itself, but a
 plain `julia +1.10 --project=. -e 'using IMEXRungeKutta'` after a 1.13
-resolve fails, because PrecompileTools 1.3 (CommonSolve's one dependency)
-requires Julia 1.12. Delete `Manifest.toml` when switching.
+resolve fails, because of PrecompileTools 1.3 (`CODE.md`, "Dependencies
+and names"). Delete `Manifest.toml` when switching.
 
 **The device smoke run**, on an Apple-silicon Mac, in its own
 environment. Set it up once per Julia version (delete
@@ -232,16 +112,18 @@ julia --project=test/metal -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate
 IMEXRUNGEKUTTA_TEST_METAL=1 julia --project=test/metal test/metal_tests.jl
 ```
 
-The same two with `julia +1.10` run it on the floor; both pass (measured
-in step 4, Metal 1.11.1). `Pkg.develop` is needed on 1.10, which ignores
+The same two with `julia +1.10` run it on the floor; both pass (Metal
+1.11.1). `Pkg.develop` is needed on 1.10, which ignores
 the environment's `[sources]`, and harmless on 1.11 and later, which read
 it. Without the variable the file does nothing; with it and no functional
-Metal, it fails. The run takes 14 s on 1.13 and 11 s on 1.10; the first
-setup on 1.10 precompiled Metal in 25 s. Never add Metal to the root
+Metal, it fails. The run takes 14 s on 1.13 and 11 s on 1.10, most of it
+compiling kernels; the first setup on 1.10
+precompiled Metal in 25 s. Never add Metal to the root
 `Project.toml` or to `test/Project.toml`: every `Pkg.test()`, on Linux
-too, would then install a GPU stack, and `scaffold_tests.jl` refuses it.
+too, would then install a GPU stack, and `scaffold_tests.jl` refuses it
+(`CODE.md`, "On a device").
 
-The clean-archive check, run before a step is reported done:
+The clean-archive check, run before work is reported done:
 
 ```bash
 d=$(mktemp -d) && git archive HEAD | tar -x -C "$d" &&
@@ -285,52 +167,74 @@ EntropyEOS):
   PrecompileTools and Preferences with it). Test-only dependencies go in
   `test/Project.toml`, with their bounds in its `[compat]`, e.g.
   OrdinaryDiffEqSDIRK as an oracle; the root `Project.toml` has no
-  `[extras]` or `[targets]` (Erik's decision in step 6).
+  `[extras]` or `[targets]` (`CODE.md`, "File layout").
   `test/scaffold_tests.jl` asserts both files' `[deps]` lists and the root
   `[compat]`, so adding a dependency of either kind means amending
   `CODE.md` and that test together.
+- **The public API** is `CODE.md`, "The interface" and "The callback
+  contracts", under semantic versioning: a change to it is a major
+  version.
 - Unicode in mathematical contexts (`Δt`, `u★`, `γ`, `Ã`, `b̃`, `c̃`).
   `ArgumentError`s say *why*.
 - Docstrings are prose-first and point at `CODE.md`, by a section's
   heading or a bold paragraph label that exists there.
 - `README.md`'s ` ```julia ` blocks are extracted and run by
   `test/readme_tests.jl`, so they must run as written; code that must
-  not run, such as the installation, is indented instead. CI runs on a
-  README-only push to `main` for that reason.
+  not run, such as the installation, is indented instead (`CODE.md`,
+  "File layout", on CI).
 - **Testset names are claims**, each opening with a comment naming the
   failure mode it guards.
 
 ## Sharp edges
 
-Traps that the design makes easy to fall into, carried over from the
-implementation plan. The why is in `CODE.md`.
+Traps that the design makes easy to fall into. The why is in `CODE.md`.
 
+- **The stage contract is the package.** Exactly one `solve_imp!` call
+  per implicit stage. The tendency is taken before any limiter. No
+  nonlinear-solver loop, tolerance or retry lives here (`CODE.md`, "One
+  step").
+- **Two abscissae.** An explicit evaluation is at `tⁿ + c̃_k Δt`, and a
+  stage solve at `tⁿ + c_k Δt`; they differ (SSP3(4,3,3) at stage 1).
+  Mixing them up is invisible on any problem where the right-hand side
+  does not depend on `t` (see SciML/OrdinaryDiffEq.jl#4620), so every
+  order test includes one where it does (`CODE.md`, "Tableaus" and
+  "Testing").
+- **Skip what the tableau does not use.** Evaluate the explicit part only
+  where column `k` of `Ã` or `b̃_k` is nonzero. Store an implicit
+  tendency only where it is read (`CODE.md`, "One step", Cost).
 - **Increments, not tendencies.** The integrator stores `d_k = U − u★`
   and uses the coefficients `a_kj/a_jj` and `b_j/a_jj`, computed in
   extended precision and rounded to `T` once. Never form
-  `(U − u★)/(a_kk Δt)` and multiply back.
+  `(U − u★)/(a_kk Δt)` and multiply back (`CODE.md`, "One step").
 - **Structural zeros are never read.** A skipped tendency has no array,
   and scratch filled with NaN must not reach the result (`0·NaN = NaN`).
-  The stage plan branches on the pattern; it never multiplies by zero.
-- **Coefficient precision.** Compute every closed form inside
+  The stage plan branches on the pattern; it never multiplies by zero
+  (`CODE.md`, "The stage plan and storage").
+- **Coefficient precision.** Hold coefficients in `BigFloat` (exactly,
+  where rational) and convert to `T` once; never paste Float64 literals,
+  since most tableaus are irrational. Compute every closed form inside
   `setprecision(BigFloat, 256) do … end`, never at the global precision.
   Compute the abscissae `c` and `c̃` exactly and convert the result, not a
   sum of converted entries. Convert to `T` from the 256-bit value, the
-  rational tableaus included: `T(BigFloat(r))`.
+  rational tableaus included: `T(BigFloat(r))` (`CODE.md`, "Tableaus"
+  and "Tableaus are values").
 - **`BigFloat` and precompilation.** The named tableaus are functions,
-  not `const`s, and `init` builds its stage plan from them at run time.
+  not `const`s, and `init` builds its stage plan from them at run time
+  (`CODE.md`, "Tableaus are values").
 - **Type instability is confined to `init`.** The stage plan's type
   depends on the tableau's nonzero pattern. `step!` must pass `@inferred`,
-  and on the broadcast path allocate nothing.
+  and on the broadcast path allocate nothing (`CODE.md`, "The stage plan
+  and storage").
 - **CommonSolve's names.** `using CommonSolve: CommonSolve, init, solve,
   solve!, step!`, add methods, and re-export the four, so that they are
   SciMLBase's and OrdinaryDiffEq's bindings too; a test asserts
-  `IMEXRungeKutta.init === CommonSolve.init`.
+  `IMEXRungeKutta.init === CommonSolve.init` (`CODE.md`, "Dependencies
+  and names").
 - **The tableau names clash with OrdinaryDiffEqSDIRK's** (`IMEXSSP3433`,
-  `ARS222`, `ImplicitEuler`, …), and the explicit ones with OrdinaryDiffEqLowOrderRK's
-  (`Euler`, `RK4`) and OrdinaryDiffEqSSPRK's (`SSPRK33`). The oracle test
-  imports them `as ODE`, `as LowRK` and `as SSPRK`, and qualifies
-  everything.
+  `ARS222`, `ImplicitEuler`, …), and the explicit ones with
+  OrdinaryDiffEqLowOrderRK's (`Euler`, `RK4`) and OrdinaryDiffEqSSPRK's
+  (`SSPRK33`). The oracle test imports them `as ODE`, `as LowRK` and
+  `as SSPRK`, and qualifies everything (`CODE.md`, "Tableaus are values").
 - **High orders need `BigFloat`.** Butcher62 (order 6) and CooperVerner8
   (order 8) reach `Float64` round-off within one or two halvings of `Δt`;
   their observed order is measured in 256-bit `BigFloat`, and no
@@ -340,18 +244,18 @@ implementation plan. The why is in `CODE.md`.
   there with no stage limiter call. Every right-hand-side input is limited
   only with the same function as both limiters, and `u0` limited before
   `init` (`CODE.md`, "Explicit tableaus").
-- **The oracle.**
+- **The oracle** (`CODE.md`, "Why not an existing package" and "The
+  oracle").
   - SciML's `SplitODEProblem(f1, f2, u0, tspan)` treats **`f1`
     implicitly** and `f2` explicitly: the opposite order from
     `IMEXProblem(f_exp!, solve_imp!, …)`.
   - Upstream's state must be real.
   - Upstream's SSP3(4,3,3) uses the 14-digit coefficients, which differ
     from the closed form by about 1e−15.
-  - Upstream's `ARS443` had `b̃ = b`, not the last row of `Ã`, until
-    2.9.6; 2.9.7 has the paper's and is compared with `ARS443()`. The
-    `b̃ = b` variant (`ARS443_2_9_6` in the tests) is still a third-order
-    method of its own, in the `O(Δt⁴)` test and the stiff-limit table.
-  - #4620 is under "Repository facts".
+  - `ARS443_2_9_6` in the tests is OrdinaryDiffEqSDIRK 2.9.6's `ARS443`,
+    with `b̃ = b`, not the paper's: a third-order method of its own, in
+    the `O(Δt⁴)` test and the stiff-limit table. Upstream from 2.9.7 is
+    compared with `ARS443()` (`CODE.md`, "Cross-checks").
 - **MultiFloats converts only through `BigFloat`** (`CODE.md`,
   "Software floats"). A double-float has no `Int`, `Float64`, `round(Int,
   …)` or `cos`, so a `T(x)` between two float types in `src/` goes
@@ -366,14 +270,15 @@ implementation plan. The why is in `CODE.md`.
     stays on the host, and a callback converts what it takes from `t`.
   - Metal compiles a shape-specialized kernel once a shape has been
     broadcast more than ten times, so the second step at a new state
-    length compiles for about a second and allocates about 250 MB. Warm
-    up three steps before measuring anything.
+    length compiles for about a second. Warm up three steps before
+    measuring anything.
 
 ## Repository facts
 
-- The remote is `origin`, `eschnett/IMEXRungeKutta.jl` on GitHub (from
-  2026-09-24). Work on a branch, and do not commit, push, merge or tag
-  without being asked; pushes, tags and releases are Erik's.
+- The remote is `origin`, `eschnett/IMEXRungeKutta.jl` on GitHub. Work
+  on a branch, and do not commit, push, merge or tag without being asked;
+  pushes, tags and releases are Erik's. The package is not registered;
+  any registration is Erik's too. The releases are in `HISTORY.md`.
 - `.gitignore` is the siblings':
   `Manifest.toml` everywhere, `/docs/build/`, `/bin/output/`, editor
   leftovers, `TODO.md`.
@@ -385,10 +290,3 @@ implementation plan. The why is in `CODE.md`.
     and `generic_imex_perform_step.jl` in SciML/OrdinaryDiffEq.jl;
   - ClimaTimeSteppers: `src/solvers/imex_ssprk.jl`, `imex_ark.jl` and
     `imex_tableaus.jl` in CliMA/ClimaTimeSteppers.jl.
-- OrdinaryDiffEqSDIRK #4620 (the mistimed last explicit stage), open on
-  2026-09-24, is fixed in 2.9.7, which a fresh `Pkg.test()` resolved on
-  2026-10-05. The two `@test_broken`s of `test/oracle_tests.jl` became
-  unexpected passes, as intended, and are plain `@test`s now, every
-  tableau compared with a `t`-dependent explicit part too; the compat
-  floor is `2.9.7`. A later upstream change to the tableaus or the stage
-  times shows the same way, as a failure there.
