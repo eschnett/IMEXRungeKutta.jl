@@ -7,9 +7,10 @@
 # The rational ones are held exactly. No Float64 literal appears.
 #
 # Each is cross-checked against OrdinaryDiffEqSDIRK's `imex_tableaus.jl`
-# (2.9.6) and ClimaTimeSteppers' `src/solvers/imex_tableaus.jl` (main,
-# 2026-09-24), by reading them, except SSP2(3,3,2), which neither has.
-# `CODE.md` ("Tableaus", "Cross-checks") records the one disagreement. The
+# (2.9.6, and 2.9.7) and ClimaTimeSteppers' `src/solvers/imex_tableaus.jl`
+# (main, 2026-09-24), by reading them, except SSP2(3,3,2), which neither
+# has. `CODE.md` ("Tableaus", "Cross-checks") records the one disagreement,
+# 2.9.6's ARS(4,4,3), which 2.9.7 removed. The
 # ARS schemes are cited by the paper's own section and page, checked
 # against it. The Pareschi–Russo schemes are cited by their table in the
 # preprint arXiv:1009.2757 (May 2004), checked against it (Tables 2–6 are
@@ -213,10 +214,10 @@ stiffly accurate: `b` and `b̃` are the last rows of `A` and `Ã`, so the
 explicit part uses stages 1–4 only, the four explicit stages of the name.
 It is rational, and so held exactly as `Rational{BigInt}`.
 
-These are the paper's weights (§2.8, p. 160), as in ClimaTimeSteppers.
-OrdinaryDiffEqSDIRK 2.9.6's `ARS443` has `b̃ = b` instead, which is not
-the paper's and evaluates the explicit part at stage 5 too (`CODE.md`,
-"Tableaus", "Cross-checks"). The measured properties are in `CODE.md`,
+These are the paper's weights (§2.8, p. 160), as in ClimaTimeSteppers
+and OrdinaryDiffEqSDIRK 2.9.7. OrdinaryDiffEqSDIRK 2.9.6's `ARS443` had
+`b̃ = b` instead, which is not the paper's and evaluates the explicit part
+at stage 5 too (`CODE.md`, "Tableaus", "Cross-checks"). The measured properties are in `CODE.md`,
 "Tableaus".
 """
 function ARS443()
