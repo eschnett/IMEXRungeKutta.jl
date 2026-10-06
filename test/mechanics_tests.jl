@@ -4,7 +4,7 @@ using IMEXRungeKutta: ARS222, ARS443
 using IMEXRungeKutta: coefficients, scratch_count, plan_calls
 
 # The mechanics of "One step" in `CODE.md`, against the mocks of
-# `test/mocks.jl`, for all seven named tableaus, and for three tableaus of
+# `test/mocks.jl`, for all thirteen named tableaus, and for three tableaus of
 # a caller's own that exercise the plan's corner cases.
 
 # The calls one step at `tⁿ = tn` makes, in order, with their times,
@@ -65,12 +65,13 @@ const CORNER_TABLEAUS = [
 ]
 
 # A per-tableau test that silently skipped a tableau would leave its plan
-# untested; the list must be the ten exported names.
-@testset "The per-tableau tests cover all ten named tableaus" begin
+# untested; the list must be the thirteen exported names.
+@testset "The per-tableau tests cover all thirteen named tableaus" begin
     exported = [getfield(IMEXRungeKutta, n) for n in names(IMEXRungeKutta)
-                if occursin(r"^(IMEXSSP|ARS|Euler$|RK4$|SSPRK)", String(n))]
+                if occursin(r"^(IMEXSSP|ARS|Euler$|RK4$|SSPRK|Butcher|CooperVerner|ImplicitEuler$)",
+                            String(n))]
     @test all(f -> f() isa IMEXTableau, exported)
-    @test length(NAMED_TABLEAUS) == 10
+    @test length(NAMED_TABLEAUS) == 13
     @test Set(NAMED_TABLEAUS) == Set(exported)
 end
 
@@ -229,8 +230,10 @@ end
         integ = mock_integrator(tab, [1.0, 2.0])
         step!(integ)
         log = integ.p
+        # Backward Euler makes no explicit evaluation at all.
+        spec.f_exp == 0 && (@test isempty(calls(log, :f_exp)); continue)
         first_f = first(calls(log, :f_exp))
-        trivial = tab.name in ("ARS(2,2,2)", "ARS(4,4,3)", "Euler", "RK4", "SSPRK(3,3)")
+        trivial = tab.name in TRIVIAL_FIRST
         @test (log.arr[first_f] === integ.u) == trivial
         @test count(i -> log.arr[i] === integ.u, calls(log, :f_exp)) == (trivial ? 1 : 0)
     end
@@ -252,6 +255,7 @@ marker_step_limiter!(u, integ, p, t) = (u[1] = 1000; nothing)
 marker_stage_limiter!(u, integ, p, t) = (u[1] = -1; nothing)
 @testset "A trivial first stage reads uⁿ as the step limiter left it, unlimited by the stage limiter" begin
     for spec in ALL_CALL_COUNTS
+        spec.f_exp == 0 && continue
         tab = spec.make()
         seen = Float64[]
         prob = IMEXProblem(marker_f!, (U, u★, γΔt, p, t) -> nothing, [1.0, 2.0], (0.0, 1.0),
@@ -261,7 +265,7 @@ marker_stage_limiter!(u, integ, p, t) = (u[1] = -1; nothing)
         step!(integ)
         empty!(seen)
         step!(integ)
-        trivial = tab.name in ("ARS(2,2,2)", "ARS(4,4,3)", "Euler", "RK4", "SSPRK(3,3)")
+        trivial = tab.name in TRIVIAL_FIRST
         @test first(seen) == (trivial ? 1000 : -1)
         @test count(==(1000), seen) == (trivial ? 1 : 0)
     end

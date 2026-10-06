@@ -57,15 +57,18 @@ What exists:
   (compat `2.3.2`), the oracles, TOML and Test;
 - `src/IMEXRungeKutta.jl`, the module, which re-exports CommonSolve's
   `init`, `solve`, `solve!` and `step!` and exports `IMEXProblem`,
-  `IMEXTableau` and the ten named tableaus;
+  `IMEXTableau` and the thirteen named tableaus;
 - `src/tableau.jl`: `IMEXTableau{R}`, its checks, and the internals the
   plan reads: `solves`, `explicit_used`, `implicit_used`, `row_empty`,
   `needs_U`, `scratch_count` and `coefficients(T, Tt, tab)`;
 - `src/tableaus.jl`: `IMEXSSP222`, `IMEXSSP2322` (SSP2(3,2,2)),
   `IMEXSSP2332` (SSP2(3,3,2), in neither upstream, so no oracle),
   `IMEXSSP3332`, `IMEXSSP3433`, `ARS222` and `ARS443`, in closed form,
-  and the purely explicit `Euler`, `RK4` and `SSPRK33` (2026-09-25), for
-  which `solve_imp!` may be `nothing` (`CODE.md`, "Explicit tableaus");
+  the purely explicit `Euler`, `RK4` and `SSPRK33` (2026-09-25) and
+  `Butcher62` and `CooperVerner8` (2026-10-05), for which `solve_imp!`
+  may be `nothing` (`CODE.md`, "Explicit tableaus"), and the purely
+  implicit `ImplicitEuler` (2026-10-05), for which `f_exp!` may be
+  `nothing` (`CODE.md`, "Implicit Euler");
 - `src/lincomb.jl`: `lincomb!`, `lincomb_copy!`, `copy_state!`,
   `increment!`, `first_touch!` and `copy_initial`, each with a last
   `partition` argument: `nothing` is one fused broadcast, and an
@@ -82,6 +85,7 @@ What exists:
   2026-09-26), `step!`, `solve!` and `solve`;
 - `test/runtests.jl`, `test/scaffold_tests.jl`,
   `test/tableau_properties.jl` (test-only helpers: order conditions,
+  the classical ones generated from rooted trees,
   `R(z)`, the E-polynomial, the SSP coefficient), `test/tableau_tests.jl`,
   `test/mocks.jl` (logging mock callbacks), `test/interface_tests.jl`,
   `test/mechanics_tests.jl`, `test/smoke_order_tests.jl` and
@@ -322,10 +326,15 @@ implementation plan. The why is in `CODE.md`.
   SciMLBase's and OrdinaryDiffEq's bindings too; a test asserts
   `IMEXRungeKutta.init === CommonSolve.init`.
 - **The tableau names clash with OrdinaryDiffEqSDIRK's** (`IMEXSSP3433`,
-  `ARS222`, …), and the explicit ones with OrdinaryDiffEqLowOrderRK's
+  `ARS222`, `ImplicitEuler`, …), and the explicit ones with OrdinaryDiffEqLowOrderRK's
   (`Euler`, `RK4`) and OrdinaryDiffEqSSPRK's (`SSPRK33`). The oracle test
   imports them `as ODE`, `as LowRK` and `as SSPRK`, and qualifies
   everything.
+- **High orders need `BigFloat`.** Butcher62 (order 6) and CooperVerner8
+  (order 8) reach `Float64` round-off within one or two halvings of `Δt`;
+  their observed order is measured in 256-bit `BigFloat`, and no
+  explicit method above order 4 is SSP (`CODE.md`, "Explicit tableaus").
+  `Butcher6` upstream is a different method; ours is `Butcher62`.
 - **An explicit tableau's first stage is trivial**: `f_exp!` reads `uⁿ`
   there with no stage limiter call. Every right-hand-side input is limited
   only with the same function as both limiters, and `u0` limited before

@@ -236,39 +236,114 @@ function ssp_coefficient(tab::IMEXTableau; tol = 1e-10)
     end
 end
 
+# Rooted trees, for the classical order conditions of any order. A tree is
+# its index into `ROOTED_TREES`, and is stored as the sorted indices of its
+# children's trees; the leaf `τ` is index 1, with no children. Every tree
+# of order `n` is a multiset of trees whose orders add up to `n − 1`, so the
+# list is built order by order, and each multiset is generated once, as a
+# nondecreasing index sequence.
+const ROOTED_TREES = Vector{Int}[Int[]]
+const TREE_ORDER = Int[1]
+const TREES_UP_TO = Ref(1)
+
+function extend_trees!(p::Integer)
+    while TREES_UP_TO[] < p
+        n = TREES_UP_TO[] + 1
+        known = length(ROOTED_TREES)
+        function forests!(acc, prefix, remaining, lo)
+            remaining == 0 && return push!(acc, copy(prefix))
+            for i in lo:known
+                TREE_ORDER[i] ≤ remaining || continue
+                push!(prefix, i)
+                forests!(acc, prefix, remaining - TREE_ORDER[i], i)
+                pop!(prefix)
+            end
+            return acc
+        end
+        for children in forests!(Vector{Int}[], Int[], n - 1, 1)
+            push!(ROOTED_TREES, children)
+            push!(TREE_ORDER, n)
+        end
+        TREES_UP_TO[] = n
+    end
+    return nothing
+end
+
+"""
+    rooted_trees(p)
+
+The indices of the rooted trees of order exactly `p`: 1, 1, 2, 4, 9, 20,
+48, 115 and 286 of them for `p = 1, …, 9`.
+"""
+rooted_trees(p::Integer) = (extend_trees!(p); findall(==(p), TREE_ORDER))
+
+# The density `γ(t) = |t| ∏ γ(child)`.
+tree_density(i) = TREE_ORDER[i] * prod(tree_density, ROOTED_TREES[i]; init = 1)
+
+const SUPERSCRIPTS = Dict(zip("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹"))
+superscript(m) = m == 1 ? "" : map(d -> SUPERSCRIPTS[d], string(m))
+
+# Butcher's bracket notation, with repeated children as powers: `τ`,
+# `[τ]`, `[τ²]`, `[[τ]]`, `[τ³]`, `[τ[τ]]`, ….
+function tree_label(i)
+    children = ROOTED_TREES[i]
+    isempty(children) && return "τ"
+    parts = String[]
+    for j in unique(children)
+        push!(parts, tree_label(j) * superscript(count(==(j), children)))
+    end
+    return "[" * join(parts) * "]"
+end
+
+"""
+    classical_order_residuals(w, X, p)
+
+The residuals, as `label => wᵀΦ(t) − 1/γ(t)` pairs, of the classical
+order conditions of exactly order `p` of the Runge–Kutta method with
+weights `w` and coefficients `X`, one per rooted tree `t` of order `p`,
+labelled in bracket notation (`rooted_trees`). `Φ(τ) = 𝟙`, and for a tree
+with children `t₁, …, t_m`, `Φ(t) = (XΦ(t₁)) ∘ ⋯ ∘ (XΦ(t_m))`; so the
+abscissae are `X𝟙`. All conditions of every order, which a hand-written
+list cannot give past order 4 or 5 (37 up to order 6, 200 up to order 8).
+"""
+function classical_order_residuals(w::AbstractVector{R}, X::AbstractMatrix{R},
+                                   p::Integer) where {R}
+    return at256() do
+        extend_trees!(p)
+        Φ = Dict{Int,Vector{R}}()
+        function phi(i)
+            get!(Φ, i) do
+                v = ones(R, length(w))
+                for j in ROOTED_TREES[i]
+                    v = v .* (X * phi(j))
+                end
+                return v
+            end
+        end
+        return Pair{String,R}[tree_label(i) => dotw(w, phi(i)) - R(1 // tree_density(i))
+                              for i in rooted_trees(p)]
+    end
+end
+
 """
     explicit_order_residuals(tab, p)
 
-The residuals, as `label => lhs − rhs` pairs in the tableau's type, of the
-classical order conditions of exactly order `p` of the explicit part
-`(Ã, b̃)` alone, for a purely explicit tableau, whose implicit part is
-zero and so meets none of `order_residuals`' conditions on `b`. For
-`p ≤ 4` they are all the conditions (1, 1, 2 and 4 of them); for `p = 5`
-only the bushy-tree one, `b̃ᵀc̃⁴ = 1/5`, which is enough to show that
-classical RK4 stops at 4.
+The classical order conditions of exactly order `p` of the explicit part
+`(Ã, b̃)` alone ([`classical_order_residuals`](@ref)), for a purely
+explicit tableau, whose implicit part is zero and so meets none of
+`order_residuals`' conditions on `b`.
 """
-function explicit_order_residuals(tab::IMEXTableau{R}, p::Integer) where {R}
-    return at256() do
-        b, X, c = tab.b̃, tab.Ã, tab.c̃
-        conditions = if p == 1
-            ("b̃ᵀ𝟙" => (sum(b), 1),)
-        elseif p == 2
-            ("b̃ᵀc̃" => (dotw(b, c), 1 // 2),)
-        elseif p == 3
-            ("b̃ᵀc̃²" => (dotw(b, c .^ 2), 1 // 3), "b̃ᵀÃc̃" => (dotw(b, X * c), 1 // 6))
-        elseif p == 4
-            ("b̃ᵀc̃³" => (dotw(b, c .^ 3), 1 // 4),
-             "b̃ᵀ(c̃∘Ãc̃)" => (dotw(b, c .* (X * c)), 1 // 8),
-             "b̃ᵀÃc̃²" => (dotw(b, X * c .^ 2), 1 // 12),
-             "b̃ᵀÃ²c̃" => (dotw(b, X * (X * c)), 1 // 24))
-        elseif p == 5
-            ("b̃ᵀc̃⁴" => (dotw(b, c .^ 4), 1 // 5),)
-        else
-            throw(ArgumentError("explicit_order_residuals: order $p is not implemented"))
-        end
-        return Pair{String,R}[label => lhs - R(rhs) for (label, (lhs, rhs)) in conditions]
-    end
-end
+explicit_order_residuals(tab::IMEXTableau, p::Integer) =
+    classical_order_residuals(tab.b̃, tab.Ã, p)
+
+"""
+    implicit_order_residuals(tab, p)
+
+The classical order conditions of exactly order `p` of the implicit part
+`(A, b)` alone, for a purely implicit tableau, whose explicit part is zero.
+"""
+implicit_order_residuals(tab::IMEXTableau, p::Integer) =
+    classical_order_residuals(tab.b, tab.A, p)
 
 """
     stiffly_accurate(tab)

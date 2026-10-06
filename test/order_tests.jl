@@ -1,7 +1,7 @@
 using IMEXRungeKutta: IMEXProblem
 using IMEXRungeKutta: IMEXSSP222, IMEXSSP2322, IMEXSSP2332, IMEXSSP3332, IMEXSSP3433
 using IMEXRungeKutta: ARS222, ARS443
-using IMEXRungeKutta: Euler, RK4, SSPRK33
+using IMEXRungeKutta: Euler, RK4, SSPRK33, Butcher62, CooperVerner8, ImplicitEuler
 
 # The observed order of every tableau on two problems, each with an
 # implicit part `−u` whose stage solve is `U = u★/(1 + γΔt)` ("Testing",
@@ -109,4 +109,67 @@ const EXPLICIT_ORDER_TABLE = [
         @test abs(p - spec.rotate) < 0.005
         @test abs(q - spec.forced) < 0.005
     end
+end
+
+# Orders 6 and 8 reach Float64's round-off within one or two halvings of
+# `Δt`, so the high-order explicit tableaus run in 256-bit `BigFloat`,
+# state and time, on the same two problems and steps, with the exact
+# solutions at 256 bits ("Explicit tableaus" in `CODE.md`). At `Δt = 1/160`
+# Cooper–Verner's error is about 1e−22, far above 256-bit round-off.
+function explicit_order_big(tab, f!, u0, exact)
+    return at256() do
+        errs = map(ORDER_DTS) do dt
+            Δt = BigFloat(1) / round(Int, 1 / dt)
+            integ = solve(IMEXProblem(f!, nothing, [u0], (BigFloat(0), BigFloat(1))), tab;
+                          dt = Δt)
+            return abs(integ.u[1] - exact(BigFloat(1)))
+        end
+        return Float64(finest_order(errs))
+    end
+end
+
+const HIGH_ORDER_TABLE = [
+    (make = Butcher62, order = 6, rotate = 6.013, forced = 5.988),
+    (make = CooperVerner8, order = 8, rotate = 8.012,
+     forced = 8.006),
+]
+
+# A mis-weighted or mistimed stage, or a coefficient rounded through
+# `Float64` on the way, would drop the order of a sixth- or eighth-order
+# method far more than a low-order one's.
+@testset "Butcher62 and CooperVerner8 have their orders in BigFloat, ±0.1" begin
+    for spec in HIGH_ORDER_TABLE
+        tab = spec.make()
+        p = explicit_order_big(tab, explicit_rotate!, Complex(BigFloat(1)),
+                               order_exact_rotate)
+        q = explicit_order_big(tab, explicit_forced!, BigFloat(1), order_exact_forced)
+        @test abs(p - spec.order) < 0.1
+        @test abs(q - spec.order) < 0.1
+        @test abs(p - spec.rotate) < 0.005
+        @test abs(q - spec.forced) < 0.005
+    end
+end
+
+# Backward Euler, all implicit, with `f_exp! = nothing`: the stage solves
+# `U = u★ + Δt g(U, tⁿ + Δt)` of `u′ = (i − 1)u` and `u′ = cos t − u`
+# ("Implicit Euler" in `CODE.md`). A solve at `tⁿ` rather than `tⁿ⁺¹`
+# would still be first order, so the second problem's error is pinned too
+# (measured 2026-10-05: 7.393e−4 at Δt = 1/160).
+implicit_rotate!(U, u★, γΔt, p, t) = (U .= u★ ./ (1 - γΔt * (im - 1)); nothing)
+implicit_forced!(U, u★, γΔt, p, t) = (U .= (u★ .+ γΔt * cos(t)) ./ (1 + γΔt); nothing)
+function implicit_errors(solve!, u0, exact)
+    return map(ORDER_DTS) do dt
+        integ = solve(IMEXProblem(nothing, solve!, [u0], (0.0, 1.0)), ImplicitEuler(); dt)
+        return abs(integ.u[1] - exact(1.0))
+    end
+end
+@testset "ImplicitEuler is first order on u′ = (i − 1)u and u′ = cos t − u, ±0.1" begin
+    p = finest_order(implicit_errors(implicit_rotate!, 1.0 + 0.0im, order_exact_rotate))
+    errs = implicit_errors(implicit_forced!, 1.0, order_exact_forced)
+    q = finest_order(errs)
+    @test abs(p - 1) < 0.1
+    @test abs(q - 1) < 0.1
+    @test abs(p - 0.991) < 0.005
+    @test abs(q - 0.998) < 0.005
+    @test abs(errs[end] / 7.393e-4 - 1) < 0.01
 end

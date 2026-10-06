@@ -1,7 +1,7 @@
 using IMEXRungeKutta: IMEXRungeKutta, IMEXTableau
 using IMEXRungeKutta: IMEXSSP222, IMEXSSP2322, IMEXSSP2332, IMEXSSP3332, IMEXSSP3433
 using IMEXRungeKutta: ARS222, ARS443
-using IMEXRungeKutta: Euler, RK4, SSPRK33
+using IMEXRungeKutta: Euler, RK4, SSPRK33, Butcher62, CooperVerner8, ImplicitEuler
 
 # The properties of each named tableau, as measured in step 1 and recorded
 # in `CODE.md` ("Tableaus", "Measured properties"). `stiffly_accurate` is
@@ -36,6 +36,8 @@ const TABLEAUS = [
      solves = Bool[0, 1, 1, 1, 1], explicit_used = Bool[1, 1, 1, 1, 0],
      implicit_used = Bool[0, 1, 1, 1, 1], scratch = 9),
 ]
+
+failing(res) = [label for (label, r) in res if !iszero(r)]
 
 # The residual allowed for an irrational tableau held at 256 bits, whose
 # round-off is about 1e-77. A rational tableau must meet each condition
@@ -410,33 +412,56 @@ end
     @test tab.A[2, 1] == -tab.A[1, 1]
 end
 
-# The three purely explicit tableaus ("Explicit tableaus" in `CODE.md`),
+# The five purely explicit tableaus ("Explicit tableaus" in `CODE.md`),
 # with the properties of their explicit part; the implicit part is zero.
+# `miss` is the largest residual of the next order's conditions, exactly.
 const EXPLICIT_TABLEAUS = [
-    (make = Euler, name = "Euler", order = 1, ssp = 1, s = 1, scratch = 1),
-    (make = RK4, name = "RK4", order = 4, ssp = 0, s = 4, scratch = 5),
-    (make = SSPRK33, name = "SSPRK(3,3)", order = 3, ssp = 1, s = 3, scratch = 4),
+    (make = Euler, name = "Euler", R = Rational{BigInt}, order = 1, miss = 1 // 2, ssp = 1,
+     s = 1, scratch = 1),
+    (make = RK4, name = "RK4", R = Rational{BigInt}, order = 4, miss = 1 // 80, ssp = 0,
+     s = 4, scratch = 5),
+    (make = SSPRK33, name = "SSPRK(3,3)", R = Rational{BigInt}, order = 3, miss = 1 // 12,
+     ssp = 1, s = 3, scratch = 4),
+    (make = Butcher62, name = "Butcher62", R = Rational{BigInt}, order = 6,
+     miss = 361 // 332640, ssp = 0, s = 7, scratch = 8),
+    (make = CooperVerner8, name = "CooperVerner8", R = BigFloat, order = 8,
+     miss = 1 // 35280, ssp = 0, s = 11, scratch = 12),
 ]
 
 explicit_failing(tab, p) =
-    at256(() -> [label for (label, r) in explicit_order_residuals(tab, p) if !iszero(r)])
+    at256(() -> [label for (label, r) in explicit_order_residuals(tab, p)
+                  if abs(r) > tolerance(tab)])
+
+# The rooted trees that the order conditions are generated from would, if
+# one were missing or counted twice, make every order claim below weaker
+# than it says: the numbers of trees of each order are known.
+@testset "The rooted trees are 1, 1, 2, 4, 9, 20, 48, 115, 286 per order, all distinct" begin
+    @test [length(rooted_trees(p)) for p in 1:9] == [1, 1, 2, 4, 9, 20, 48, 115, 286]
+    @test sum(p -> length(rooted_trees(p)), 1:6) == 37
+    @test sum(p -> length(rooted_trees(p)), 1:8) == 200
+    labels = [tree_label(i) for p in 1:9 for i in rooted_trees(p)]
+    @test allunique(labels)
+    @test [tree_label(i) for i in rooted_trees(4)] == ["[τ³]", "[τ[τ]]", "[[τ²]]", "[[[τ]]]"]
+    @test [tree_density(i) for i in rooted_trees(4)] == [4, 8, 12, 24]
+end
 
 # A transcription error in an explicit tableau, or a helper that did not
-# tell its orders apart, shows here. They are rational, so each condition
-# holds exactly.
-@testset "Each explicit tableau meets its classical order conditions exactly, and misses the next" begin
+# tell its orders apart, shows here. The rational ones meet each condition
+# exactly, and Cooper–Verner's to its 256-bit round-off.
+@testset "Each explicit tableau meets every classical order condition up to its order, and misses the next" begin
     for spec in EXPLICIT_TABLEAUS
         tab = spec.make()
-        @test tab isa IMEXTableau{Rational{BigInt}}
+        @test tab isa IMEXTableau{spec.R}
         @test tab.name == spec.name
         @test all(iszero, tab.A) && all(iszero, tab.b)
         for p in 1:(spec.order)
             @test explicit_failing(tab, p) == String[]
         end
-        @test maximum(abs ∘ last, explicit_order_residuals(tab, spec.order + 1)) > 1e-3
+        miss = at256(() -> maximum(abs ∘ last, explicit_order_residuals(tab, spec.order + 1)))
+        @test abs(miss - spec.miss) ≤ tolerance(tab)
     end
     # RK4 misses the bushy fifth-order condition by 5/24 − 1/5.
-    @test only(explicit_order_residuals(RK4(), 5)).second == 1 // 120
+    @test Dict(explicit_order_residuals(RK4(), 5))["[τ⁴]"] == 1 // 120
 end
 
 # A wrong pattern would make the plan call `f_exp!` where nothing reads it
@@ -453,11 +478,29 @@ end
         @test IMEXRungeKutta.scratch_count(tab) == spec.scratch
         @test IMEXRungeKutta.row_empty(tab, 1)
         @test IMEXRungeKutta.needs_U(tab) == (spec.s > 1)
-        @test tab.c̃ == [sum(tab.Ã[k, :]) for k in 1:(spec.s)]
+        at256() do
+            @test tab.c̃ == [sum(tab.Ã[k, :]) for k in 1:(spec.s)]
+        end
         @test tab.c == zeros(spec.s)
     end
     @test RK4().c̃ == [0, 1 // 2, 1 // 2, 1]
     @test SSPRK33().c̃ == [0, 1, 1 // 2]
+    @test Butcher62().c̃ == [0, 1 // 3, 2 // 3, 1 // 3, 1 // 2, 1 // 2, 1]
+    # Cooper–Verner's nodes are 0, 1/2 and (7 ± √21)/14, and its weights the
+    # five-point Lobatto quadrature, on stages 1, 8, 9, 10 and 11 at 0,
+    # (7 + √21)/14, 1/2, (7 − √21)/14 and 1: the inner nodes in reverse,
+    # which the symmetric weights allow.
+    at256() do
+        tab = CooperVerner8()
+        r = sqrt(BigFloat(21))
+        lo, hi = (7 - r) / 14, (7 + r) / 14
+        h = BigFloat(1) / 2
+        @test maximum(abs.(tab.c̃ .- [0, h, h, lo, lo, h, hi, hi, h, lo, 1])) < 1e-70
+        @test findall(!iszero, tab.b̃) == [1, 8, 9, 10, 11]
+        @test tab.b̃[[1, 8, 9, 10, 11]] ==
+              BigFloat.([1 // 20, 49 // 180, 16 // 45, 49 // 180, 1 // 20])
+        @test maximum(abs.(tab.c̃[[1, 8, 9, 10, 11]] .- [0, hi, h, lo, 1])) < 1e-70
+    end
     # SSPRK(3,3) is SSP3(3,3,2)'s explicit part, coefficient for coefficient.
     # (SSP3(3,3,2) is held in BigFloat, so the comparison is at 256 bits.)
     at256() do
@@ -470,7 +513,8 @@ end
 end
 
 # The order conditions are the independent check of each transcription,
-# so a slip in any one explicit coefficient must break one of them.
+# so a slip in any one explicit coefficient must break one of them; with
+# 37 conditions for Butcher62 and 200 for Cooper–Verner, every one does.
 function undetected_explicit_perturbations(spec)
     tab = spec.make()
     found = String[]
@@ -482,7 +526,7 @@ function undetected_explicit_perturbations(spec)
                 j < k || continue
             end
             y = copy(x)
-            y[i] += 1 // 1000
+            at256(() -> (y[i] += 1 // 1000))
             Ã, b̃ = f === :Ã ? (y, tab.b̃) : (tab.Ã, y)
             m = IMEXTableau("m", Ã, b̃, tab.A, tab.b)
             all(p -> isempty(explicit_failing(m, p)), 1:(spec.order)) &&
@@ -495,4 +539,54 @@ end
     for spec in EXPLICIT_TABLEAUS
         @test undetected_explicit_perturbations(spec) == String[]
     end
+end
+
+# A closed form evaluated at the global precision would change with a
+# caller's `setprecision`, and lose digits below 256 bits.
+@testset "CooperVerner8 is 256-bit whatever the global precision" begin
+    ref = CooperVerner8()
+    for prec in (64, 1024)
+        tab = setprecision(CooperVerner8, BigFloat, prec)
+        for f in (:Ã, :b̃, :A, :b, :c̃, :c)
+            @test getfield(tab, f) == getfield(ref, f)
+            @test all(x -> precision(x) == 256, getfield(tab, f))
+        end
+    end
+end
+
+# The new explicit tableaus' coefficients reach `T` correctly rounded, as
+# the IMEX tableaus' do (above), the irrational Cooper–Verner included.
+@testset "The explicit and implicit tableaus' converted coefficients are correctly rounded" begin
+    for tab in (Butcher62(), CooperVerner8(), ImplicitEuler())
+        ref = reference_coefficients(tab)
+        for T in (Float32, Float64, BigFloat)
+            co = IMEXRungeKutta.coefficients(T, T, tab)
+            for f in (:Ã, :b̃, :γ, :Ā, :b̄, :c̃, :c)
+                @test all(correctly_rounded.(co[f], ref[f]))
+            end
+        end
+    end
+end
+
+# Backward Euler ("Implicit Euler" in `CODE.md`): the additive method with a
+# zero explicit part. A slip in its one coefficient would make it another
+# method, and a wrong pattern would call `f_exp!`, which may be `nothing`.
+@testset "ImplicitEuler is backward Euler: first order, L-stable, no explicit stage" begin
+    tab = ImplicitEuler()
+    @test tab isa IMEXTableau{Rational{BigInt}}
+    @test tab.name == "ImplicitEuler"
+    @test tab.A == fill(1, 1, 1) && tab.b == [1]
+    @test all(iszero, tab.Ã) && all(iszero, tab.b̃)
+    @test tab.c == [1] && tab.c̃ == [0]
+    @test isempty(failing(implicit_order_residuals(tab, 1)))
+    @test only(implicit_order_residuals(tab, 2)).second == 1 // 2
+    @test R_infinity(tab) == 0
+    @test is_A_stable(tab)
+    @test stiffly_accurate(tab) == (true, true)
+    @test IMEXRungeKutta.solves(tab) == [true]
+    @test IMEXRungeKutta.explicit_used(tab) == [false]
+    @test IMEXRungeKutta.implicit_used(tab) == [true]
+    @test IMEXRungeKutta.needs_U(tab)
+    @test IMEXRungeKutta.scratch_count(tab) == 2
+    @test sprint(show, tab) == "IMEXTableau{Rational{BigInt}}(\"ImplicitEuler\", 1 stages)"
 end

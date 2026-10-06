@@ -1,7 +1,7 @@
 using IMEXRungeKutta: IMEXProblem
 using IMEXRungeKutta: IMEXSSP222, IMEXSSP2322, IMEXSSP2332, IMEXSSP3332, IMEXSSP3433
 using IMEXRungeKutta: ARS222, ARS443
-using IMEXRungeKutta: Euler, RK4, SSPRK33
+using IMEXRungeKutta: Euler, RK4, SSPRK33, Butcher62, CooperVerner8
 
 # Total variation under upwind advection with relaxation ("Testing", SSP,
 # in `CODE.md`):
@@ -115,11 +115,19 @@ end
 # coefficient where it is positive ("Explicit tableaus" in `CODE.md`).
 # RK4's SSP coefficient is 0, but on this linear problem only its
 # stability polynomial matters, `1 + z + z²/2 + z³/6 + z⁴/24`, whose
-# threshold is 1.
+# threshold is 1. No explicit method above order 4 has a positive SSP
+# coefficient (Ruuth & Spiteri 2002), and Butcher62's and Cooper–Verner's
+# are 0. Their stability polynomials end in `−(7/3) z⁷/7!` and
+# `−0.83 z¹¹/11!`, whose thresholds are only 8.0e−9 and 1.0e−6; the
+# bisected 0.0524 and 0.2095 are where their total-variation growth, of
+# high order in `C`, falls below the 1e−12 tolerance, as ARS(4,4,3)'s
+# 0.0021 is (measured 2026-10-05).
 const EXPLICIT_SSP_TABLE = [
     (make = Euler, ssp = 1, C∞ = 1.0),
     (make = RK4, ssp = 0, C∞ = 1.0),
     (make = SSPRK33, ssp = 1, C∞ = 1.0),
+    (make = Butcher62, ssp = 0, C∞ = 0.0524),
+    (make = CooperVerner8, ssp = 0, C∞ = 0.2095),
 ]
 @testset "An explicit tableau's C is its linear threshold, the SSP coefficient where > 0" begin
     for spec in EXPLICIT_SSP_TABLE

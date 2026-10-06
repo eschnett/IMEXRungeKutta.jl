@@ -95,7 +95,8 @@ end
         @test err ≤ 8
         worst = max(worst, Float64(err))
     end
-    # Measured 2026-09-28: 2.1 eps for Float32x2, 3.3 for Float64x2.
+    # Measured 2026-10-05, with the thirteen tableaus: 2.4 eps for
+    # Float32x2, 3.3 for Float64x2 (2.1 and 3.3 on 2026-09-28).
     @info "A $(mfname(S)) run against 256 bits, in eps($(mfname(S)))" worst
 end
 

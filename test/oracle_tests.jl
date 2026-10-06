@@ -3,7 +3,7 @@ import OrdinaryDiffEqLowOrderRK as LowRK
 import OrdinaryDiffEqSSPRK as SSPRK
 using IMEXRungeKutta: IMEXProblem, IMEXTableau
 using IMEXRungeKutta: IMEXSSP222, IMEXSSP2322, IMEXSSP3332, IMEXSSP3433, ARS222, ARS443
-using IMEXRungeKutta: Euler, RK4, SSPRK33
+using IMEXRungeKutta: Euler, RK4, SSPRK33, ImplicitEuler
 using LinearAlgebra: I, mul!
 
 # OrdinaryDiffEqSDIRK as an oracle ("Why not an existing package" and
@@ -163,6 +163,37 @@ const EXPLICIT_ORACLE_TABLE = [
 @testset "Each explicit tableau agrees with OrdinaryDiffEq to 1e−12 over ten steps, with t or not" begin
     for spec in EXPLICIT_ORACLE_TABLE, a in (AUTONOMOUS, T_DEPENDENT)
         d = maximum(abs, upstream_explicit_run(spec.alg, a) - our_explicit_run(spec.make(), a))
+        @test d < 1e-12
+    end
+end
+
+# Backward Euler against OrdinaryDiffEqSDIRK's `ImplicitEuler`, whose name
+# clashes with ours ("Implicit Euler" in `CODE.md`). The same linear
+# problem, all of it implicit, `u′ = (L + M)u + a cos(3t) v`, with
+# `f_exp! = nothing`; its stage solve is
+# `U = (I − Δt(L + M)) \ (u★ + Δt a cos(3t) v)` at `t = tⁿ + Δt`, which the
+# `t`-dependent case checks. Upstream's Newton iteration is exact to
+# round-off on a linear `g`.
+function oracle_implicit_imp!(U, u★, γΔt, a, t)
+    U .= (I - γΔt * (ORACLE_L + ORACLE_M)) \ (u★ .+ (γΔt * a * cos(3t)) .* ORACLE_v)
+    return nothing
+end
+function upstream_implicit_run(a; dt = 0.1, n = 10)
+    prob = ODE.ODEProblem(oracle_explicit_f!, copy(ORACLE_u0), (0.0, n * dt), a)
+    sol = ODE.solve(prob, ODE.ImplicitEuler(); dt, adaptive = false, save_everystep = false)
+    return sol.u[end]
+end
+function our_implicit_run(a; dt = 0.1, n = 10)
+    prob = IMEXProblem(nothing, oracle_implicit_imp!, copy(ORACLE_u0), (0.0, n * dt), a)
+    return solve(prob, ImplicitEuler(); dt).u
+end
+
+# A stage solve at the wrong time, or an increment taken from the wrong
+# arrays, shows as a difference far above round-off. Measured over ten
+# steps of Δt = 0.1, autonomous and `t`-dependent: 8.3e−17 and 9.7e−17.
+@testset "ImplicitEuler agrees with OrdinaryDiffEqSDIRK's to 1e−12 over ten steps, with t or not" begin
+    for a in (AUTONOMOUS, T_DEPENDENT)
+        d = maximum(abs, upstream_implicit_run(a) - our_implicit_run(a))
         @test d < 1e-12
     end
 end
