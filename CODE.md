@@ -2132,7 +2132,8 @@ was 2.9.6 until 2026-10-05 (amended 2026-10-05).
 - `ImplicitEuler()` against OrdinaryDiffEqSDIRK's `ImplicitEuler`, on the
   same problem made wholly implicit, with `f_exp! = nothing` and the
   stage solve `U = (I − Δt(L + M)) \ (u★ + Δt a cos(3t) v)`: 8.3e−17 for
-  `a = 0` and 9.7e−17 for `a = 1` (measured 2026-10-05, with 2.9.6).
+  `a = 0` and 9.7e−17 for `a = 1` (measured 2026-10-05, the same with
+  2.9.6 and 2.9.7).
   Butcher62 and CooperVerner8 have no oracle run; they are checked
   against OrdinaryDiffEqExplicitTableaus by reading
   ([Explicit tableaus](#explicit-tableaus-decided-2026-09-25)).
